@@ -9,7 +9,12 @@
 在项目目录 `D:\项目\Switch\` 启动 AI 助手,粘贴以下提示词:
 
 ```
-我要部署一个「用 PC 模拟 Nintendo Switch 手柄 + 宏录制 Web UI」项目。项目在当前目录,包含全部源码和编译好的内核(kernel/bzImage3)。请先读 README.md 了解完整方案,然后从零部署:
+我要部署一个「用 PC 模拟 Nintendo Switch 手柄 + 宏录制 Web UI」项目。项目在当前目录,包含全部源码和编译好的内核。请先读 README.md 了解完整方案,然后:
+0. 先识别硬件:查蓝牙适配器(设备管理器「蓝牙」或 usbipd list)确认芯片型号和是否走 USB 总线;查是否有 Xbox 无线手柄。根据硬件决定:
+   - MediaTek MT7921/RZ616 -> 可直接用预编译内核 kernel/bzImage3
+   - 其他蓝牙芯片 -> 需按 build_kernel.sh 重编译(蓝牙固件在 firmware/)
+   - Intel 蓝牙 -> 兼容性差,建议换 USB 蓝牙适配器
+   - 蓝牙不走 USB 总线(如内置 PCIe/ACPI)-> usbipd 直通不可用,需 USB 蓝牙适配器
 1. 检查/安装 WSL2 + Ubuntu(未装则 wsl --install -d Ubuntu,并开启 systemd)
 2. 配置内核:把 kernel/bzImage3 放 C:\Users\<用户名>\wslkernel\,按 README 配 .wslconfig(kernel + vmIdleTimeout=-1),wsl --shutdown 重启
 3. 装 usbipd-win(项目里 msi 或 winget install usbipd.win),直通蓝牙适配器(usbipd list 查 busid,bind --force + attach --wsl)
