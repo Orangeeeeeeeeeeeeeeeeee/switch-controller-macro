@@ -82,6 +82,7 @@ Xbox 手柄/键盘 ──> 浏览器 Web UI ──WebSocket──> WSL2(joycontr
 | `joycontrol-pluginloader/` | [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) 源码(已 patch,loader.py) |
 | `.wslconfig` | WSL 配置(kernel + vmIdleTimeout),复制到 `C:\Users\<用户>\` 使用 |
 | `usbipd-win_5.3.0_x64.msi` | usbipd 安装包 |
+| `firmware/` | MediaTek 蓝牙固件(`BT_RAM_CODE_MT7922_1_1_hdr.bin` 已 built-in 内核,此备份用于重编译) |
 | `杏仁巢穴宏.json` | 预制宏(用户录制),Web UI 点"读宏"加载 |
 | `纠错宏.json` | 预制宏(用户录制),Web UI 点"读宏"加载 |
 
