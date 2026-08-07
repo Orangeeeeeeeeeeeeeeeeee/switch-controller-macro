@@ -9,13 +9,17 @@
 在项目目录 `D:\项目\Switch\` 启动 AI 助手,粘贴以下提示词:
 
 ```
-我要部署一个 Switch 手柄模拟 + 宏录制 Web UI 项目。项目在当前目录,请先读 README.md 了解完整方案,然后帮我部署:
-1. 检查 WSL2 + 自定义内核(kernel/bzImage3)是否就绪(.wslconfig 指向)
-2. usbipd 直通蓝牙到 WSL(bind --force + attach --wsl)
-3. WSL 里启动 joycontrol web_ui.py(连 Switch,MAC 见项目记忆)
-4. 浏览器访问 Web UI(http://<WSL IP>:8080)测试
+我要部署一个「用 PC 模拟 Nintendo Switch 手柄 + 宏录制 Web UI」项目。项目在当前目录,包含全部源码和编译好的内核(kernel/bzImage3)。请先读 README.md 了解完整方案,然后从零部署:
+1. 检查/安装 WSL2 + Ubuntu(未装则 wsl --install -d Ubuntu,并开启 systemd)
+2. 配置内核:把 kernel/bzImage3 放 C:\Users\<用户名>\wslkernel\,按 README 配 .wslconfig(kernel + vmIdleTimeout=-1),wsl --shutdown 重启
+3. 装 usbipd-win(项目里 msi 或 winget install usbipd.win),直通蓝牙适配器(usbipd list 查 busid,bind --force + attach --wsl)
+4. WSL 里装 joycontrol + pluginloader(项目 joycontrol/ 和 joycontrol-pluginloader/ 已 patch Python 3.14)+ bluez(禁 input 插件)
+5. 配对 Switch:跑 PairingController.py,Switch 进「更改握法/顺序」菜单,记下 MAC
+6. 启动 Web UI:joycontrol-pluginloader -r <MAC> web_ui.py(换 Switch 可设环境变量 SWITCH_MAC,不用改代码)
+7. 浏览器访问 http://<WSL IP>:8080 测试(虚拟手柄/键盘/手柄模式 + 绑定/换绑/鼠标摇杆 + 录制/回放/宏列表)
 
-遇到问题帮我排查:蓝牙 detach、Switch 断开(Connection reset)、Python 3.14 patch、固件加载等。
+硬件:USB 蓝牙适配器(推荐 MediaTek/Realtek,Intel 兼容性差)。Xbox 手柄可选。
+遇到问题排查:蓝牙 detach、Switch 断开(Connection reset)、固件加载 -2(CONFIG_EXTRA_FIRMWARE built-in)、Python 3.14 get_event_loop(patch utils.py/loader.py)、端口 8080 占用(pkill web_ui.py)。
 ```
 
 AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
