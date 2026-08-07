@@ -140,6 +140,10 @@ MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`
    ```bash
    sudo joycontrol-pluginloader -r <Switch MAC> /mnt/d/项目/Switch/web_ui.py
    ```
+   换 Switch(改 MAC,不用改代码):设环境变量 `SWITCH_MAC`:
+   ```bash
+   SWITCH_MAC=01:23:45:67:89:AB sudo joycontrol-pluginloader -r 01:23:45:67:89:AB /mnt/d/项目/Switch/web_ui.py
+   ```
 4. 浏览器访问:`http://<WSL IP>:8080`(WSL IP 用 `wsl hostname -I` 查)
 
 ### Web UI 功能

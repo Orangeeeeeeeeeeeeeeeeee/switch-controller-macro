@@ -13,6 +13,7 @@ WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 class web_ui(JoycontrolPlugin):
     async def run(self):
         self._playing = False
+        self._reconnect_lock = asyncio.Lock()
         app = web.Application()
         app.router.add_get('/', self._index)
         app.router.add_get('/ws', self._ws_handler)
@@ -47,6 +48,8 @@ class web_ui(JoycontrolPlugin):
                     elif ev.get('type') == 'stop':
                         self._playing = False
                         logger.info('stop received')
+                    elif ev.get('type') == 'reconnect':
+                        asyncio.create_task(self._reconnect())
                     else:
                         await self._apply(ev)
                 except Exception as e:
@@ -90,12 +93,39 @@ class web_ui(JoycontrolPlugin):
         logger.info('play done')
 
     async def _stick_sender(self):
+        fail = 0
         while True:
             await asyncio.sleep(1 / 60)
             try:
                 await self.controller_state.send()
+                fail = 0
             except Exception:
-                pass
+                fail += 1
+                if fail >= 10:
+                    logger.info('connection lost, reconnecting...')
+                    try:
+                        await self._reconnect()
+                    except Exception as e:
+                        logger.warning(f'reconnect failed: {e}')
+                    fail = 0
+
+    def _get_mac(self):
+        return os.environ.get('SWITCH_MAC', 'E0:EF:BF:34:3E:2B')
+
+    async def _reconnect(self):
+        async with self._reconnect_lock:
+            from joycontrol.controller import Controller
+            from joycontrol.memory import FlashMemory
+            from joycontrol.protocol import controller_protocol_factory
+            from joycontrol.server import create_hid_server
+            mac = self._get_mac()
+            spi_flash = FlashMemory()
+            controller = Controller.from_arg('PRO_CONTROLLER')
+            factory = controller_protocol_factory(controller, spi_flash=spi_flash)
+            transport, protocol = await create_hid_server(factory, reconnect_bt_addr=mac, ctl_psm=17, itr_psm=19, capture_file=None, device_id=None)
+            self.controller_state = protocol.get_controller_state()
+            await self.controller_state.connect()
+            logger.info('reconnected to Switch')
 
     async def _play_list(self, macros, loops=1, macroInterval=0, loopInterval=0):
         if not macros:
