@@ -77,7 +77,7 @@ Xbox 手柄/键盘 ──> 浏览器 Web UI ──WebSocket──> WSL2(joycontr
 | `web_ui.py` | Web UI 后端(joycontrol 插件 + aiohttp WebSocket server,端口 8080) |
 | `web/index.html` | Web UI 前端(虚拟手柄 + 键盘/手柄模式 + 录制/回放/列表/循环) |
 | `build_kernel.sh` | WSL2 自定义内核编译脚本(蓝牙+USB+vhci+固件 built-in) |
-| `kernel/bzImage3` | 编译好的自定义内核(可直接用)。使用:复制到 `C:\Users\<用户>\wslkernel\`,在 `.wslconfig` 设 `kernel=C:\\Users\\<用户>\\wslkernel\\bzImage3`(或直接指向此项目路径) |
+| `kernel/bzImage3` | 编译好的自定义内核(可直接用,**预编译仅支持 MediaTek MT7921/RZ616 系列蓝牙**,其他蓝牙芯片需按 build_kernel.sh 重编译)。使用:复制到 `C:\Users\<用户>\wslkernel\`,在 `.wslconfig` 设 `kernel=C:\\Users\\<用户>\\wslkernel\\bzImage3`(或直接指向此项目路径) |
 | `joycontrol/` | [joycontrol](https://github.com/mart1nroo/joycontrol) 源码(已 patch Python 3.14 兼容,utils.py) |
 | `joycontrol-pluginloader/` | [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) 源码(已 patch,loader.py) |
 | `.wslconfig` | WSL 配置(kernel + vmIdleTimeout),复制到 `C:\Users\<用户>\` 使用 |
@@ -143,12 +143,9 @@ MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`
    ```
 3. 启动 Web UI(WSL):
    ```bash
-   sudo joycontrol-pluginloader -r <Switch MAC> /mnt/d/项目/Switch/web_ui.py
+   SWITCH_MAC=<你的Switch蓝牙MAC> sudo joycontrol-pluginloader -r <Switch MAC> /mnt/d/项目/Switch/web_ui.py
    ```
-   换 Switch(改 MAC,不用改代码):设环境变量 `SWITCH_MAC`:
-   ```bash
-   SWITCH_MAC=01:23:45:67:89:AB sudo joycontrol-pluginloader -r 01:23:45:67:89:AB /mnt/d/项目/Switch/web_ui.py
-   ```
+   `SWITCH_MAC` 用于断开后自动重连;换 Switch 改 MAC 即可(不用改代码)
 4. 浏览器访问:`http://<WSL IP>:8080`(WSL IP 用 `wsl hostname -I` 查)
 
 ### Web UI 功能

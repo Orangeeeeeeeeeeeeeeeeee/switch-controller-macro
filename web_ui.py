@@ -110,7 +110,7 @@ class web_ui(JoycontrolPlugin):
                     fail = 0
 
     def _get_mac(self):
-        return os.environ.get('SWITCH_MAC', 'E0:EF:BF:34:3E:2B')
+        return os.environ.get('SWITCH_MAC', '')
 
     async def _reconnect(self):
         async with self._reconnect_lock:
