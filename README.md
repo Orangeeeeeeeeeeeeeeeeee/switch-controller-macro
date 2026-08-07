@@ -1,8 +1,8 @@
 ## AI 辅助部署
 
 本项目部署涉及 WSL2 内核编译、蓝牙固件、Python 3.14 patch 等复杂步骤,建议用 AI 助手辅助:
-- **deepseek v4 flash + claude**(推荐:deepseek 执行命令 + claude 规划排查)
-- **opencode**(开源 AI 编码助手)
+- **deepseek v4 flash + claude code
+- **opencode** opencode有免费的deepseek flash 可用
 
 ### 提示词
 
@@ -15,7 +15,7 @@
 3. WSL 里启动 joycontrol web_ui.py(连 Switch,MAC 见项目记忆)
 4. 浏览器访问 Web UI(http://<WSL IP>:8080)测试
 
-遇到问题帮我排查:蓝牙 detach、Switch 断开(Connection reset)、Python 3.14 patch、固件加载等。项目记忆在 ~/.claude/projects/D-----Switch/memory/。
+遇到问题帮我排查:蓝牙 detach、Switch 断开(Connection reset)、Python 3.14 patch、固件加载等。
 ```
 
 AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
