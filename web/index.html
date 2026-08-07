@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Switch 手柄 Web UI</title>
+<style>
+body{font-family:sans-serif;background:#222;color:#eee;margin:20px;max-width:700px}
+h1{font-size:18px}
+.status{color:#0a0;margin:5px 0}
+.ctrl{margin:10px 0;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.ctrl button{background:#444;color:#eee;border:1px solid #666;padding:8px 12px;cursor:pointer;border-radius:4px}
+.ctrl button.active{background:#0a0}
+.ctrl button.rec{background:#a00}
+.row{display:flex;gap:20px;margin:10px 0;flex-wrap:wrap}
+.stick{width:120px;height:120px;border:2px solid #666;border-radius:50%;position:relative;background:#333;touch-action:none}
+.knob{width:36px;height:36px;background:#0a0;border-radius:50%;position:absolute;top:42px;left:42px}
+.dpad{display:grid;grid-template-columns:42px 42px 42px;grid-template-rows:42px 42px 42px;gap:2px}
+.dpad button,.abxy button,.side button{background:#444;color:#eee;border:1px solid #666;padding:0;font-size:14px;cursor:pointer;border-radius:4px}
+.abxy{display:grid;grid-template-columns:42px 42px 42px;grid-template-rows:42px 42px 42px;gap:2px}
+.side{display:flex;flex-direction:column;gap:2px}
+.side button{height:42px}
+textarea{width:100%;height:100px;background:#333;color:#eee;border:1px solid #666;font-family:monospace;font-size:12px}
+h3{font-size:14px;margin:8px 0 4px}
+</style>
+</head>
+<body>
+<h1>Switch 手柄 Web UI</h1>
+<div class="status" id="status">连接中...</div>
+<div class="ctrl">
+  模式:
+  <button id="m-virtual" class="active" onclick="setMode('virtual')">虚拟手柄</button>
+  <button id="m-keyboard" onclick="setMode('keyboard')">键盘</button>
+  <button id="m-gamepad" onclick="setMode('gamepad')">手柄</button>
+  <span style="width:10px"></span>
+  <button id="rec-btn" class="rec" onclick="toggleRec()">录制</button>
+  <button onclick="playMacro()">回放</button>
+  <button onclick="stopAll()">停止</button>
+  <button onclick="clearMacro()">清空</button>
+  <button onclick="saveMacro()">存宏</button>
+  <button onclick="loadMacro()">读宏</button>
+  <span id="rec-count">0 事件</span>
+  <span style="width:10px"></span>
+  <button onclick="addToList()">加入列表</button>
+  <button onclick="playList()">回放列表</button>
+  <button onclick="clearList()">清空列表</button>
+  <span id="list-count">列表0</span>
+<div id="macro-list" style="margin:5px 0;padding:5px;border:1px solid #555;min-height:30px"></div>
+  循环:<input id="loops" type="number" value="1" style="width:50px" min="0">(0=无限)
+  间隔:<input id="interval" type="number" value="0" style="width:50px" min="0">秒(单宏循环)
+  宏间隔:<input id="macroInterval" type="number" value="0" style="width:50px" min="0">秒(列表段间)
+  循环间隔:<input id="loopInterval" type="number" value="0" style="width:50px" min="0">秒(列表循环间)
+</div>
+
+<div class="row">
+  <div>
+    <div class="stick" id="lstick"><div class="knob" id="lknob"></div></div>
+    <div style="text-align:center">左摇杆</div>
+  </div>
+  <div class="dpad">
+    <div></div><button onmousedown="btn('up',1)" onmouseup="btn('up',0)" ontouchstart="btn('up',1)" ontouchend="btn('up',0)">↑</button><div></div>
+    <button onmousedown="btn('left',1)" onmouseup="btn('left',0)" ontouchstart="btn('left',1)" ontouchend="btn('left',0)">←</button><div></div><button onmousedown="btn('right',1)" onmouseup="btn('right',0)" ontouchstart="btn('right',1)" ontouchend="btn('right',0)">→</button>
+    <div></div><button onmousedown="btn('down',1)" onmouseup="btn('down',0)" ontouchstart="btn('down',1)" ontouchend="btn('down',0)">↓</button><div></div>
+  </div>
+  <div class="abxy">
+    <div></div><button onmousedown="btn('x',1)" onmouseup="btn('x',0)">X</button><div></div>
+    <button onmousedown="btn('y',1)" onmouseup="btn('y',0)">Y</button><div></div><button onmousedown="btn('a',1)" onmouseup="btn('a',0)">A</button>
+    <div></div><button onmousedown="btn('b',1)" onmouseup="btn('b',0)">B</button><div></div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="side">
+    <button onmousedown="btn('l',1)" onmouseup="btn('l',0)">L</button>
+    <button onmousedown="btn('zl',1)" onmouseup="btn('zl',0)">ZL</button>
+    <button onmousedown="btn('l_stick',1)" onmouseup="btn('l_stick',0)">L3</button>
+  </div>
+  <div class="side">
+    <button onmousedown="btn('minus',1)" onmouseup="btn('minus',0)">-</button>
+    <button onmousedown="btn('plus',1)" onmouseup="btn('plus',0)">+</button>
+    <button onmousedown="btn('home',1)" onmouseup="btn('home',0)">Home</button>
+    <button onmousedown="btn('capture',1)" onmouseup="btn('capture',0)">截图</button>
+  </div>
+  <div class="side">
+    <button onmousedown="btn('r',1)" onmouseup="btn('r',0)">R</button>
+    <button onmousedown="btn('zr',1)" onmouseup="btn('zr',0)">ZR</button>
+    <button onmousedown="btn('r_stick',1)" onmouseup="btn('r_stick',0)">R3</button>
+  </div>
+  <div>
+    <div class="stick" id="rstick"><div class="knob" id="rknob"></div></div>
+    <div style="text-align:center">右摇杆</div>
+  </div>
+</div>
+
+<h3>映射配置(键盘 code / 手柄按钮索引 -> Switch 按键名)</h3>
+<textarea id="mapcfg">{
+  "keyboard": {"KeyA":"a","KeyS":"b","KeyZ":"y","KeyX":"x","KeyJ":"left","KeyL":"right","KeyI":"up","KeyK":"down","KeyU":"l","KeyO":"r","KeyQ":"zl","KeyE":"zr","Enter":"plus","Backspace":"minus","Space":"home","KeyC":"capture"},
+  "gamepad": {"0":"b","1":"a","2":"y","3":"x","4":"l","5":"r","6":"zl","7":"zr","8":"minus","9":"plus","10":"l_stick","11":"r_stick","12":"up","13":"down","14":"left","15":"right"}
+}</textarea>
+<br><button onclick="saveMap()">应用映射</button>
+
+<script>
+let ws=null, mode='virtual', recording=false, macro=[], recT0=0;
+let keyMap={}, gpMap={}, gpPrev={};
+
+function connect(){
+  const host=location.hostname||'127.0.0.1';
+  ws=new WebSocket('ws://'+host+':8080/ws');
+  ws.onopen=()=>{document.getElementById('status').textContent='已连接';};
+  ws.onclose=()=>{document.getElementById('status').textContent='已断开,重连...';setTimeout(connect,2000);};
+  ws.onerror=()=>{};
+}
+connect();
+
+function send(ev){
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify(ev));
+  if(recording) macro.push({t:performance.now()-recT0, ev:ev});
+  document.getElementById('rec-count').textContent=macro.length+' 事件';
+}
+function btn(name,p){ send({type:'button',name:name,pressed:!!p}); }
+
+function setMode(m){
+  mode=m;
+  document.querySelectorAll('[id^=m-]').forEach(b=>b.classList.remove('active'));
+  document.getElementById('m-'+m).classList.add('active');
+}
+
+function toggleRec(){
+  recording=!recording;
+  document.getElementById('rec-btn').classList.toggle('rec',!recording);
+  document.getElementById('rec-btn').textContent=recording?'停止':'录制';
+  document.getElementById('rec-btn').style.background=recording?'#0a0':'';
+  if(recording){macro=[];recT0=performance.now();}
+}
+function playMacro(){
+  if(!macro.length){alert('宏为空,先录制或读宏');return;}
+  let loops=parseInt(document.getElementById('loops').value);
+  if(isNaN(loops)) loops=1;
+  let interval=parseFloat(document.getElementById('interval').value)||0;
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'play',macro:macro,loops:loops,interval:interval}));
+}
+function stopAll(){
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'stop'}));
+  if(recording) toggleRec();
+}
+function clearMacro(){macro=[];document.getElementById('rec-count').textContent='0 事件';}
+let macroList=[];
+function renderList(){
+  document.getElementById('list-count').textContent='列表'+macroList.length;
+  const el=document.getElementById('macro-list');
+  el.innerHTML=macroList.map((m,i)=>`<div>宏${i+1}: ${m.length}事件 <button onclick="removeFromList(${i})" style="margin-left:8px">删除</button></div>`).join('')||'<div style="color:#888">列表为空</div>';
+}
+function addToList(){if(macro.length){macroList.push(macro.slice());renderList();}}
+function clearList(){macroList=[];renderList();}
+function removeFromList(i){macroList.splice(i,1);renderList();}
+renderList();
+function playList(){
+  if(!macroList.length){alert('列表为空,先加入列表');return;}
+  let loops=parseInt(document.getElementById('loops').value);if(isNaN(loops))loops=1;
+  let macroInterval=parseFloat(document.getElementById('macroInterval').value)||0;
+  let loopInterval=parseFloat(document.getElementById('loopInterval').value)||0;
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'play_list',macros:macroList,loops:loops,macroInterval:macroInterval,loopInterval:loopInterval}));
+}
+function saveMacro(){
+  const name=prompt('宏文件名','macro.json');
+  if(!name) return;
+  const blob=new Blob([JSON.stringify(macro)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
+}
+function loadMacro(){
+  const f=document.createElement('input');f.type='file';f.accept='.json';
+  f.onchange=e=>{
+    const r=new FileReader();
+    r.onload=()=>{macro=JSON.parse(r.result);document.getElementById('rec-count').textContent=macro.length+' 事件';};
+    r.readAsText(e.target.files[0]);
+  };
+  f.click();
+}
+
+function saveMap(){
+  try{
+    const cfg=JSON.parse(document.getElementById('mapcfg').value);
+    keyMap=cfg.keyboard||{}; gpMap=cfg.gamepad||{};
+  }catch(e){alert('JSON 错误: '+e.message);}
+}
+saveMap();
+
+document.addEventListener('keydown',e=>{
+  if(mode!=='keyboard') return;
+  const n=keyMap[e.code]; if(n){btn(n,1);e.preventDefault();}
+});
+document.addEventListener('keyup',e=>{
+  if(mode!=='keyboard') return;
+  const n=keyMap[e.code]; if(n){btn(n,0);e.preventDefault();}
+});
+
+let lastLStick='', lastRStick='';
+function gpLoop(){
+  if(mode==='gamepad'){
+    const gp=navigator.getGamepads()[0];
+    if(gp){
+      gp.buttons.forEach((b,i)=>{
+        const p=b.pressed;
+        if(gpMap[i] && p!==gpPrev[i]){btn(gpMap[i],p?1:0);gpPrev[i]=p;}
+      });
+      const lx=gp.axes[0]||0, ly=gp.axes[1]||0, rx=gp.axes[2]||0, ry=gp.axes[3]||0;
+      const lh=Math.abs(lx)>0.1?lx:0, lv=Math.abs(ly)>0.1?ly:0;
+      const rh=Math.abs(rx)>0.1?rx:0, rv=Math.abs(ry)>0.1?ry:0;
+      const ls=lh.toFixed(2)+','+lv.toFixed(2);
+      const rs=rh.toFixed(2)+','+rv.toFixed(2);
+      if(ls!==lastLStick){send({type:'stick',stick:'left',h:lh,v:-lv});lastLStick=ls;}
+      if(rs!==lastRStick){send({type:'stick',stick:'right',h:rh,v:-rv});lastRStick=rs;}
+    }
+  }
+  requestAnimationFrame(gpLoop);
+}
+requestAnimationFrame(gpLoop);
+
+function setupStick(el,knob,stick){
+  let drag=false;
+  const handle=(cx,cy)=>{
+    const r=el.getBoundingClientRect();
+    let x=(cx-r.left-r.width/2)/(r.width/2);
+    let y=(cy-r.top-r.height/2)/(r.height/2);
+    const m=Math.sqrt(x*x+y*y); if(m>1){x/=m;y/=m;}
+    knob.style.left=(42+x*30)+'px'; knob.style.top=(42+y*30)+'px';
+    send({type:'stick',stick:stick,h:x,v:-y});
+  };
+  const reset=()=>{knob.style.left='42px';knob.style.top='42px';send({type:'stick',stick:stick,h:0,v:0});};
+  el.addEventListener('mousedown',e=>{drag=true;handle(e.clientX,e.clientY);});
+  document.addEventListener('mousemove',e=>{if(drag)handle(e.clientX,e.clientY);});
+  document.addEventListener('mouseup',()=>{if(drag){drag=false;reset();}});
+  el.addEventListener('touchstart',e=>{drag=true;handle(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();});
+  el.addEventListener('touchmove',e=>{if(drag)handle(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();});
+  el.addEventListener('touchend',()=>{drag=false;reset();});
+}
+setupStick(document.getElementById('lstick'),document.getElementById('lknob'),'left');
+setupStick(document.getElementById('rstick'),document.getElementById('rknob'),'right');
+</script>
+</body>
+</html>
