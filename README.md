@@ -33,6 +33,13 @@ AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
 ## 维护说明
 
 **本项目无更多精力维护,不接受合并代码(PR)。** 如需修改/扩展,请单开分支(fork)自行维护,谢谢。
+
+## 致谢
+
+本项目使用了以下开源项目:
+- [joycontrol](https://github.com/mart1nroo/joycontrol) - Nintendo Switch 蓝牙手柄模拟
+- [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) - joycontrol 插件加载器
+- [aiohttp](https://github.com/aio-libs/aiohttp) - Python 异步 HTTP/WebSocket
 # Switch 手柄模拟 + 宏录制 Web UI
 
 用 PC(WSL2)模拟 Nintendo Switch Pro Controller,通过蓝牙连接 Switch,支持 Xbox 手柄/键盘映射、宏录制与回放。NS 无需破解。
@@ -67,8 +74,8 @@ Xbox 手柄/键盘 ──> 浏览器 Web UI ──WebSocket──> WSL2(joycontr
 | `web/index.html` | Web UI 前端(虚拟手柄 + 键盘/手柄模式 + 录制/回放/列表/循环) |
 | `build_kernel.sh` | WSL2 自定义内核编译脚本(蓝牙+USB+vhci+固件 built-in) |
 | `kernel/bzImage3` | 编译好的自定义内核(可直接用)。使用:复制到 `C:\Users\<用户>\wslkernel\`,在 `.wslconfig` 设 `kernel=C:\\Users\\<用户>\\wslkernel\\bzImage3`(或直接指向此项目路径) |
-| `joycontrol/` | joycontrol 源码(已 patch Python 3.14 兼容,utils.py) |
-| `joycontrol-pluginloader/` | pluginloader 源码(已 patch,loader.py) |
+| `joycontrol/` | [joycontrol](https://github.com/mart1nroo/joycontrol) 源码(已 patch Python 3.14 兼容,utils.py) |
+| `joycontrol-pluginloader/` | [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) 源码(已 patch,loader.py) |
 | `.wslconfig` | WSL 配置(kernel + vmIdleTimeout),复制到 `C:\Users\<用户>\` 使用 |
 | `usbipd-win_5.3.0_x64.msi` | usbipd 安装包 |
 | `杏仁巢穴宏.json` | 预制宏(用户录制),Web UI 点"读宏"加载 |
