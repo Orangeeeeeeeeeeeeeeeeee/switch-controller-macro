@@ -8,7 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncHID(hid.Device):
-    def __init__(self, *args, loop=asyncio.get_event_loop(), **kwargs):
+    def __init__(self, *args, loop=None, **kwargs):
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
         super().__init__(*args, **kwargs)
         self._loop = loop
 

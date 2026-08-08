@@ -26,6 +26,32 @@ class PluginLoader:
         return joycontrol_plugin
 
 
+    async def _connect_retry(self, factory, args, ctl_psm, itr_psm, capture_file):
+        # Retry connecting to the Switch until it is reachable (e.g. woke from sleep).
+        # Otherwise the plugin exits immediately when the Switch is asleep ("Host is down").
+        delay = 5
+        transport = None
+        while True:
+            try:
+                transport, protocol = await create_hid_server(factory, reconnect_bt_addr=args.reconnect_bt_addr,
+                                                              ctl_psm=ctl_psm, itr_psm=itr_psm,
+                                                              capture_file=capture_file, device_id=args.device_id)
+                controller_state = protocol.get_controller_state()
+                self.transport = transport
+                await controller_state.connect()
+                return transport, protocol, controller_state
+            except Exception as e:
+                logger.warning(f'connect failed: {e}. Retrying in {delay}s (wake the Switch)...')
+                if transport is not None:
+                    try:
+                        transport.close()
+                    except Exception:
+                        pass
+                    transport = None
+                await asyncio.sleep(delay)
+                delay = min(delay + 5, 30)
+
+
     async def start(self, args):
         # Create memory containing default controller stick calibration
         spi_flash = FlashMemory()
@@ -36,17 +62,10 @@ class PluginLoader:
         with utils.get_output(path=None, default=None) as capture_file:
             factory = controller_protocol_factory(controller, spi_flash=spi_flash)
             ctl_psm, itr_psm = 17, 19
-            transport, protocol = await create_hid_server(factory, reconnect_bt_addr=args.reconnect_bt_addr,
-                                                          ctl_psm=ctl_psm,
-                                                          itr_psm=itr_psm, capture_file=capture_file,
-                                                          device_id=args.device_id)
-
-            controller_state = protocol.get_controller_state()
-            self.transport = transport
+            transport, protocol, controller_state = await self._connect_retry(factory, args, ctl_psm, itr_psm, capture_file)
 
             try:
-                # waits until controller is fully connected
-                await controller_state.connect()
+                # plugin is only started once the controller is fully connected
                 joycontrol_plugin = self.__load_plugin(args.plugin, controller_state, args.plugin_options)
                 await joycontrol_plugin.run()
             except Exception as e:
@@ -82,8 +101,10 @@ def main():
         log.configure()
     else:
         log.configure(console_level=logging.INFO)
-    
-    loop = asyncio.get_event_loop()
+
+    # Python 3.14: get_event_loop() no longer creates a loop automatically
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     loader = PluginLoader()
 
     try:

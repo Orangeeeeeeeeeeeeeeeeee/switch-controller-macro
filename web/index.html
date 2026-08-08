@@ -78,10 +78,13 @@ details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
     <button id="m-virtual" class="active" onclick="setMode('virtual')">虚拟</button>
     <button id="m-keyboard" onclick="setMode('keyboard')">键盘</button>
     <button id="m-gamepad" onclick="setMode('gamepad')">手柄</button>
+    <button id="m-pro2" onclick="setMode('pro2')">Pro2</button>
     <span style="flex:1"></span>
     <button id="rec-btn" class="rec-active" onclick="toggleRec()">录制</button>
     <button onclick="playMacro()">回放</button>
     <button onclick="stopAll()">停止</button>
+    <button onclick="connectSwitch()">连接Switch</button>
+    <button onclick="disconnectSwitch()">断开</button>
     <button onclick="reconnect()">重连</button>
     <button id="mouse-lock-btn" onclick="toggleMouseLock()">鼠标锁定</button>
   </div>
@@ -145,6 +148,7 @@ details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
       <span id="hint-virtual">虚拟模式:点击按键直接发送到 Switch</span>
       <span id="hint-keyboard" style="display:none">键盘模式:点 Switch 按键高亮 -> 按键盘键绑定。WASD=左摇杆 IJKL=右摇杆(或换绑)。鼠标锁定后移动=右摇杆</span>
       <span id="hint-gamepad" style="display:none">手柄模式:点 Switch 按键高亮 -> 按手柄按钮绑定。摇杆点"换绑"后转一圈自动检测</span>
+      <span id="hint-pro2" style="display:none">Pro2 模式:Switch 2 Pro 手柄(USB 连 PC)输入直接转发到 Switch,无需映射绑定</span>
     </div>
   </div>
 </div>
@@ -229,7 +233,7 @@ function updateStickFromKeys(){
 }
 const SWITCH_BTNS=['a','b','x','y','l','r','zl','zr','plus','minus','home','capture','up','down','left','right','l_stick','r_stick'];
 
-function connect(){const h=location.hostname||'127.0.0.1';ws=new WebSocket('ws://'+h+':8080/ws');ws.onopen=()=>{const s=document.getElementById('status');s.textContent='已连接';s.className='status ok';};ws.onclose=()=>{const s=document.getElementById('status');s.textContent='断开,重连';s.className='status err';setTimeout(connect,2000);};ws.onerror=()=>{};}
+function connect(){const h=location.hostname||'127.0.0.1';ws=new WebSocket('ws://'+h+':8080/ws');ws.onopen=()=>{send({type:'pro2',enabled:mode==='pro2'});send({type:'get_status'});};ws.onmessage=(e)=>{var d;try{d=JSON.parse(e.data);}catch(err){return;}if(d.type==='status'){var s=document.getElementById('status');s.textContent=d.msg||d.state;s.className='status '+(d.state==='connected'?'ok':d.state==='disconnected'?'err':'wait');}};ws.onclose=()=>{const s=document.getElementById('status');s.textContent='断开,重连';s.className='status err';setTimeout(connect,2000);};ws.onerror=()=>{};}
 connect();
 function send(ev){if(ws&&ws.readyState===1)ws.send(JSON.stringify(ev));if(recording)macro.push({t:performance.now()-recT0,ev:ev});document.getElementById('rec-count').textContent=macro.length+' 事件';}
 function btn(n,p){send({type:'button',name:n,pressed:!!p});}
@@ -260,11 +264,12 @@ function toggleMouseLock(){if(document.pointerLockElement===document.body){docum
 function setMode(m){
   mode=m;
   if(m!=='keyboard'){if(mouseLocked)document.exitPointerLock();mouseStick.h=0;mouseStick.v=0;send({type:'stick',stick:stickMouse,h:0,v:0});}
+  send({type:'pro2',enabled:m==='pro2'});
   document.querySelectorAll('[id^=m-]').forEach(function(b){b.classList.remove('active');});
   document.getElementById('m-'+m).classList.add('active');
   renderBindings();
   renderStickBinds();
-  ['virtual','keyboard','gamepad'].forEach(function(hm){
+  ['virtual','keyboard','gamepad','pro2'].forEach(function(hm){
     var el=document.getElementById('hint-'+hm);
     if(el)el.style.display=hm===m?'block':'none';
   });
@@ -273,6 +278,11 @@ function toggleRec(){recording=!recording;const b=document.getElementById('rec-b
 function playMacro(){if(!macro.length){alert('宏为空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let i=parseFloat(document.getElementById('interval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play',macro:macro,loops:l,interval:i}));}
 function playList(){if(!macroList.length){alert('列表空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let mi=parseFloat(document.getElementById('macroInterval').value)||0;let li=parseFloat(document.getElementById('loopInterval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play_list',macros:macroList,loops:l,macroInterval:mi,loopInterval:li}));}
 function stopAll(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'stop'}));if(recording)toggleRec();}
+function connectSwitch(){
+  send({type:'connect',mac:''});
+  const s=document.getElementById('status');s.textContent='连接/搜索中...';s.className='status wait';
+}
+function disconnectSwitch(){send({type:'disconnect'});const s=document.getElementById('status');s.textContent='断开中...';s.className='status wait';}
 function reconnect(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'reconnect'}));const s=document.getElementById('status');s.textContent='重连中';s.className='status wait';}
 function clearMacro(){macro=[];document.getElementById('rec-count').textContent='0 事件';}
 function saveMacro(){const n=prompt('文件名','macro.json');if(!n)return;const b=new Blob([JSON.stringify(macro)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();}
@@ -309,6 +319,8 @@ requestAnimationFrame(gpLoop);
 function setupStick(el,knob,stick){let drag=false;const h=(cx,cy)=>{const r=el.getBoundingClientRect();let x=(cx-r.left-r.width/2)/(r.width/2);let y=(cy-r.top-r.height/2)/(r.height/2);const m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m;}knob.style.left=(35+x*26)+'px';knob.style.top=(35+y*26)+'px';send({type:'stick',stick:stick,h:x,v:-y});};const reset=()=>{knob.style.left='35px';knob.style.top='35px';send({type:'stick',stick:stick,h:0,v:0});};el.addEventListener('mousedown',e=>{drag=true;h(e.clientX,e.clientY);});document.addEventListener('mousemove',e=>{if(drag)h(e.clientX,e.clientY);});document.addEventListener('mouseup',()=>{if(drag){drag=false;reset();}});el.addEventListener('touchstart',e=>{drag=true;h(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();});el.addEventListener('touchmove',e=>{if(drag)h(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();});el.addEventListener('touchend',()=>{drag=false;reset();});}
 setupStick(document.getElementById('lstick'),document.getElementById('lknob'),'left');
 setupStick(document.getElementById('rstick'),document.getElementById('rknob'),'right');
+window.addEventListener('gamepadconnected',(e)=>{var s=document.getElementById('status');s.textContent='手柄已连接: '+e.gamepad.id;s.className='status ok';});
+window.addEventListener('gamepaddisconnected',()=>{var s=document.getElementById('status');s.textContent='已连接';s.className='status ok';});
 </script>
 </body>
 </html>

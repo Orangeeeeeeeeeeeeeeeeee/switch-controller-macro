@@ -15,13 +15,15 @@ cp Microsoft/config-wsl .config
 ./scripts/config --enable BT_HCIBTUSB_MTK
 ./scripts/config --enable BT_HCIBTUSB_REALTEK
 ./scripts/config --enable BT_HIDP
+./scripts/config --enable INPUT_UINPUT
+./scripts/config --enable HIDRAW
 ./scripts/config --enable FW_LOADER_COMPRESS_ZSTD
 make olddefconfig
 sed -i 's/^CONFIG_FW_LOADER_USER_HELPER=y/# CONFIG_FW_LOADER_USER_HELPER is not set/' .config
 ./scripts/config --set-str EXTRA_FIRMWARE "mediatek/BT_RAM_CODE_MT7922_1_1_hdr.bin"
 ./scripts/config --set-str EXTRA_FIRMWARE_DIR "/lib/firmware"
 echo "=== CONFIG_CHECK ==="
-grep -E "CONFIG_USB_SUPPORT=|CONFIG_USB=|CONFIG_BT=|CONFIG_BT_HCIBTUSB=|CONFIG_BT_HCIBTUSB_MTK=|FW_LOADER_USER_HELPER" .config
+grep -E "CONFIG_USB_SUPPORT=|CONFIG_USB=|CONFIG_BT=|CONFIG_BT_HCIBTUSB=|CONFIG_BT_HCIBTUSB_MTK=|CONFIG_INPUT_UINPUT=|CONFIG_HIDRAW=|FW_LOADER_USER_HELPER" .config
 if ! grep -q "CONFIG_BT_HCIBTUSB=y" .config; then echo "=== WARN: BT_HCIBTUSB not builtin ==="; fi
 echo "=== BUILD_START ==="
 make -j"$(nproc)" > /tmp/kernel_build.log 2>&1

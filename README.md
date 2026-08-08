@@ -18,13 +18,14 @@
 1. 检查/安装 WSL2 + Ubuntu(未装则 wsl --install -d Ubuntu,并开启 systemd)
 2. 配置内核:把 kernel/bzImage3 放 C:\Users\<用户名>\wslkernel\,按 README 配 .wslconfig(kernel + vmIdleTimeout=-1),wsl --shutdown 重启
 3. 装 usbipd-win(项目里 msi 或 winget install usbipd.win),直通蓝牙适配器(usbipd list 查 busid,bind --force + attach --wsl)
-4. WSL 里装 joycontrol + pluginloader(项目 joycontrol/ 和 joycontrol-pluginloader/ 已 patch Python 3.14)+ bluez(禁 input 插件)
+4. WSL 里装 joycontrol + pluginloader(项目 joycontrol/ 和 joycontrol-pluginloader/ 已 patch Python 3.14)+ aiohttp(Web UI 依赖,joycontrol 不含)+ bluez(禁 input 插件)
 5. 配对 Switch:跑 PairingController.py,Switch 进「更改握法/顺序」菜单,记下 MAC
-6. 启动 Web UI:joycontrol-pluginloader -r <MAC> web_ui.py(换 Switch 可设环境变量 SWITCH_MAC,不用改代码)
-7. 浏览器访问 http://<WSL IP>:8080 测试(虚拟手柄/键盘/手柄模式 + 绑定/换绑/鼠标摇杆 + 录制/回放/宏列表)
+6. 启动 Web UI:`sudo python3 /mnt/d/项目/Switch/web_ui.py`(Web UI 与连接解耦,自动重连)。Switch MAC 存到 `switch_config.json`(首次启动自动创建、git 已忽略):页面点「连接Switch」自动搜索/连接,或手动编辑该文件
+7. (可选,Pro2 模式)WSL 装 `golang libusb-1.0-0-dev python3-dev` + `pip3 install evdev`,`modprobe uinput`;编译 `procon2-driver/go build -o procon2-driver ./src`;USB 线连 Switch 2 Pro 手柄,usbipd 直通;`sudo ./procon2-driver --daemon &` 注入 evdev
+8. 浏览器访问 http://<WSL IP>:8080 测试(虚拟/键盘/手柄/Pro2 模式 + 绑定/换绑/鼠标摇杆 + 录制/回放/宏列表)
 
-硬件:USB 蓝牙适配器(推荐 MediaTek/Realtek,Intel 兼容性差)。Xbox 手柄可选。
-遇到问题排查:蓝牙 detach、Switch 断开(Connection reset)、固件加载 -2(CONFIG_EXTRA_FIRMWARE built-in)、Python 3.14 get_event_loop(patch utils.py/loader.py)、端口 8080 占用(pkill web_ui.py)。
+硬件:USB 蓝牙适配器(推荐 MediaTek/Realtek,Intel 兼容性差)。Xbox 手柄可选。Switch 2 Pro 手柄(Pro2 模式,USB 线)可选。
+遇到问题排查:蓝牙 detach、Switch 断开(Connection reset)、固件加载 -2(CONFIG_EXTRA_FIRMWARE built-in)、Python 3.14 get_event_loop(patch utils.py/loader.py)、端口 8080 占用(pkill web_ui.py)、Pro2 无输入(procon2 是否在跑、uinput 是否加载、手柄是否 usbipd 直通)。
 ```
 
 AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
@@ -85,6 +86,7 @@ Xbox 手柄/键盘 ──> 浏览器 Web UI ──WebSocket──> WSL2(joycontr
 | `kernel/bzImage3` | 编译好的自定义内核(可直接用,**预编译仅支持 MediaTek MT7921/RZ616 系列蓝牙**,其他蓝牙芯片需按 build_kernel.sh 重编译)。使用:复制到 `C:\Users\<用户>\wslkernel\`,在 `.wslconfig` 设 `kernel=C:\\Users\\<用户>\\wslkernel\\bzImage3`(或直接指向此项目路径) |
 | `joycontrol/` | [joycontrol](https://github.com/mart1nroo/joycontrol) 源码(已 patch Python 3.14 兼容,utils.py) |
 | `joycontrol-pluginloader/` | [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) 源码(已 patch,loader.py) |
+| `procon2-driver/` | [procon2-driver](https://github.com/dalmatheo/procon2-driver) 源码(MIT,已 vendor)。读 Switch 2 Pro 手柄 USB 输入并注入为 evdev 虚拟手柄,供 Pro2 模式转发 |
 | `.wslconfig` | WSL 配置(kernel + vmIdleTimeout),复制到 `C:\Users\<用户>\` 使用 |
 | `usbipd-win_5.3.0_x64.msi` | usbipd 安装包 |
 | `firmware/` | MediaTek 蓝牙固件(`BT_RAM_CODE_MT7922_1_1_hdr.bin` 已 built-in 内核,此备份用于重编译) |
@@ -123,9 +125,9 @@ usbipd attach --wsl --busid <蓝牙busid>
 sudo apt install python3-dbus libhidapi-hidraw0 python3-pip
 git clone https://github.com/mart1nroo/joycontrol.git
 git clone --recursive https://github.com/Almtr/joycontrol-pluginloader.git
-sudo pip3 install --break-system-packages joycontrol/ joycontrol-pluginloader/
+sudo pip3 install --break-system-packages joycontrol/ joycontrol-pluginloader/ aiohttp
 ```
-**Python 3.14 兼容**:joycontrol 0.15 用 `asyncio.get_event_loop()`(3.14 移除),需 patch `utils.py` 和 `loader.py`(用 `new_event_loop + set_event_loop`)。
+`aiohttp` 是 Web UI 后端依赖(joycontrol 不含,需单独装)。**Python 3.14 兼容**:joycontrol 0.15 用 `asyncio.get_event_loop()`(3.14 移除),需 patch `utils.py` 和 `loader.py`(用 `new_event_loop + set_event_loop`)。本项目的 `joycontrol/`、`joycontrol-pluginloader/` 已 patch,可直接 `pip3 install` 这两个目录。
 
 ### 5. bluez(禁 input 插件)
 ```bash
@@ -138,6 +140,37 @@ sudo systemctl restart bluetooth
 ### 6. 蓝牙固件(若需要)
 MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`,若 `.zst` 压缩且内核不支持 zstd,`zstd -d` 解压。或用 `CONFIG_EXTRA_FIRMWARE` built-in(推荐)。
 
+### 7. Pro2 模式(Switch 2 Pro 手柄转发,可选)
+让 Switch 2 Pro 手柄(USB 线连 PC)的输入经 WSL 转发到 Switch。**仅用 Pro2 模式才需要装**,不用可跳过。
+
+1. WSL 内装依赖(编译 procon2-driver 需要 Go + libusb,运行需要 evdev + uinput):
+   ```bash
+   sudo apt install -y golang libusb-1.0-0-dev python3-dev
+   sudo pip3 install evdev
+   ```
+2. 编译 procon2-driver(项目已 vendor 源码):
+   ```bash
+   cd /mnt/d/项目/Switch/procon2-driver
+   go build -o procon2-driver ./src
+   ```
+3. 加载 uinput 模块(WSL 自定义内核需 `CONFIG_UINPUT=y`):
+   ```bash
+   sudo modprobe uinput
+   ls /dev/uinput   # 应存在
+   ```
+4. USB 线把 Switch 2 Pro 手柄连 PC,usbipd 直通到 WSL:
+   ```powershell
+   usbipd list                    # 找手柄 busid(VID:PID 057e:2069)
+   usbipd bind --busid <busid>
+   usbipd attach --wsl --busid <busid>
+   ```
+5. 后台运行 procon2-driver(读手柄并注入 evdev):
+   ```bash
+   cd /mnt/d/项目/Switch/procon2-driver
+   sudo ./procon2-driver --daemon &
+   ```
+   看到 `🎮 Player 1` 即成功;`/dev/input/event*` 会出现 "Nintendo Pro Controller 2 (Player 1)" 设备。Web UI 的 NS 手柄读取器会自动按名查找该设备。
+
 ## 日常使用
 
 ### 启动
@@ -146,17 +179,27 @@ MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`
    ```powershell
    usbipd attach --wsl --busid <蓝牙busid>
    ```
-3. 启动 Web UI(WSL):
+3. 启动 Web UI(WSL,独立模式,Web UI 与 Switch 连接解耦):
    ```bash
-   SWITCH_MAC=<你的Switch蓝牙MAC> sudo joycontrol-pluginloader -r <Switch MAC> /mnt/d/项目/Switch/web_ui.py
+   sudo python3 /mnt/d/项目/Switch/web_ui.py
    ```
-   `SWITCH_MAC` 用于断开后自动重连;换 Switch 改 MAC 即可(不用改代码)
+   - **Switch MAC 配置**(隐私信息,不进 GitHub):存在项目根目录 `switch_config.json`(已被 .gitignore 忽略,部署时首次启动自动创建)。两种方式填写:
+     1. 页面点「**连接Switch**」自动搜索并连接,找到后自动保存到该文件(已配对/已配置时直接连接,不用搜索)
+     2. 或手动编辑该文件:
+        ```json
+        { "switch_mac": "AA:BB:CC:DD:EE:FF" }
+        ```
+   - 也可临时用环境变量覆盖:`sudo SWITCH_MAC=<MAC> python3 /mnt/d/项目/Switch/web_ui.py`(`sudo` 会丢弃环境变量,必须写在 `sudo` 之后)
+   - Web UI 立即启动,与 Switch 连接互相独立:连不上/断连时页面照常可用,后台自动重试(每 2-15 秒)
+   - 蓝牙连接卡住时先重置:WSL 里 `hciconfig hci0 reset`
 4. 浏览器访问:`http://<WSL IP>:8080`(WSL IP 用 `wsl hostname -I` 查)
 
 ### Web UI 功能
+- **连接/断开**:「连接Switch」连接(已配置 MAC 直接连;未配置时自动蓝牙搜索,Switch 需进「更改握法/顺序」菜单被发现);「断开」关闭蓝牙连接并停止自动重连,状态栏实时显示连接状态
 - **虚拟手柄模式**:鼠标点页面按键(ABXY/LR/ZLZR/十字键/摇杆)-> Switch
 - **键盘模式**:键盘按键按映射表 -> Switch(默认 A/S/Z/X/I/J/K/L/U/O/Q/E 等)。WASD 控制左摇杆、IJKL 控制右摇杆(可换绑)
 - **手柄模式**:Xbox 手柄(Gamepad API)按映射表 -> Switch
+- **Pro2 模式**:Switch 2 Pro 手柄(USB 线直通 WSL)输入直接转发到 Switch,无需映射绑定(仅此模式生效)
 - **鼠标**:键盘模式下点"鼠标锁定",鼠标移动控制摇杆(默认右摇杆,可换绑),灵敏度可调
 - **绑定**:键盘/手柄模式下点 Switch 按键(高亮),再按键盘键/手柄按钮即可绑定,按钮上显示绑定键
 - **摇杆换绑**:点摇杆下方"换绑" -> 键盘模式选 keyboard/mouse;手柄模式转一圈自动检测

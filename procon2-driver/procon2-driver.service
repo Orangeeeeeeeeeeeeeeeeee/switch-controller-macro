@@ -1,0 +1,18 @@
+[Unit]
+Description=An unofficial Nintendo Switch™ 2 Pro Controller driver.
+After=network.target
+
+[Service]
+# Execute the installed binary with the --daemon flag
+ExecStart=/usr/bin/procon2-driver --daemon
+# Restart automatically if it crashes
+Restart=always
+RestartSec=5
+# Run as root to access /dev/hidraw* and /dev/uinput
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

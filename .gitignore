@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 *.log
+switch_config.json
+procon2-driver/procon2
+procon2-driver/procon2-driver

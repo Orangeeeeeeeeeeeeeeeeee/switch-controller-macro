@@ -108,10 +108,27 @@ async def create_hid_server(protocol_factory, ctl_psm=17, itr_psm=19, device_id=
 
     else:
         # Reconnection to reconnect_bt_addr
+        # Connect with a timeout in a worker thread: a blocking socket.connect()
+        # on the event loop would freeze the web server, and loop.sock_connect
+        # can't be cancelled by asyncio.wait_for if the Switch ignores the
+        # connection (it hangs forever). A blocking socket with settimeout
+        # reliably raises socket.timeout, and running it in an executor keeps
+        # the event loop free.
+        loop = asyncio.get_event_loop()
         client_ctl = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
         client_itr = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
-        client_ctl.connect((reconnect_bt_addr, ctl_psm))
-        client_itr.connect((reconnect_bt_addr, itr_psm))
+
+        def _connect(sock, addr):
+            sock.settimeout(15)
+            try:
+                sock.connect(addr)
+            except Exception:
+                sock.close()
+                raise
+            sock.setblocking(False)
+
+        await loop.run_in_executor(None, _connect, client_ctl, (reconnect_bt_addr, ctl_psm))
+        await loop.run_in_executor(None, _connect, client_itr, (reconnect_bt_addr, itr_psm))
         client_ctl.setblocking(False)
         client_itr.setblocking(False)
 
@@ -121,13 +138,15 @@ async def create_hid_server(protocol_factory, ctl_psm=17, itr_psm=19, device_id=
 
     # HACK: send some empty input reports until the Switch decides to reply
     future = asyncio.ensure_future(_send_empty_input_reports(transport))
-    await protocol.wait_for_output_report()
-    """
-    future.cancel()
     try:
-        await future
-    except asyncio.CancelledError:
-        pass
-    """
+        await asyncio.wait_for(protocol.wait_for_output_report(), timeout=15)
+    finally:
+        # cancel the empty-reports task so it doesn't crash with
+        # "Task does not support set_exception" when the transport later closes
+        future.cancel()
+        try:
+            await future
+        except (asyncio.CancelledError, Exception):
+            pass
 
     return protocol.transport, protocol
