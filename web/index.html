@@ -107,37 +107,37 @@ details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
     <div class="panel-title">手柄</div>
     <div class="controller">
       <div class="shoulders">
-        <div><button data-sw="l" onmousedown="handleBtn(\'l\',1)" onmouseup="handleBtn('l',0)">L</button><button data-sw="zl" onmousedown="handleBtn(\'zl\',1)" onmouseup="handleBtn('zl',0)">ZL</button></div>
-        <div><button data-sw="r" onmousedown="handleBtn(\'r\',1)" onmouseup="handleBtn('r',0)">R</button><button data-sw="zr" onmousedown="handleBtn(\'zr\',1)" onmouseup="handleBtn('zr',0)">ZR</button></div>
+        <div><button data-sw="l" onmousedown="handleBtn('l',1)" onmouseup="handleBtn('l',0)">L</button><button data-sw="zl" onmousedown="handleBtn('zl',1)" onmouseup="handleBtn('zl',0)">ZL</button></div>
+        <div><button data-sw="r" onmousedown="handleBtn('r',1)" onmouseup="handleBtn('r',0)">R</button><button data-sw="zr" onmousedown="handleBtn('zr',1)" onmouseup="handleBtn('zr',0)">ZR</button></div>
       </div>
       <div class="top-row">
         <div class="stick-area">
           <div class="stick" id="lstick"><div class="knob" id="lknob"></div></div>
-          <button data-sw="l_stick" onmousedown="handleBtn(\'l_stick\',1)" onmouseup="handleBtn('l_stick',0)">L3</button>
+          <button data-sw="l_stick" onmousedown="handleBtn('l_stick',1)" onmouseup="handleBtn('l_stick',0)">L3</button>
           <div id="lstick-bind" style="font-size:8px;color:#0a6;margin-top:2px"></div>
           <button onclick="bindStick('left')" style="font-size:9px;padding:2px 6px;margin-top:2px">换绑</button>
         </div>
         <div class="middle-btns">
-          <button data-sw="minus" onmousedown="handleBtn(\'minus\',1)" onmouseup="handleBtn('minus',0)">−</button>
-          <button data-sw="capture" onmousedown="handleBtn(\'capture\',1)" onmouseup="handleBtn('capture',0)">截图</button>
-          <button data-sw="plus" onmousedown="handleBtn(\'plus\',1)" onmouseup="handleBtn('plus',0)">+</button>
-          <button data-sw="home" onmousedown="handleBtn(\'home\',1)" onmouseup="handleBtn('home',0)">Home</button>
+          <button data-sw="minus" onmousedown="handleBtn('minus',1)" onmouseup="handleBtn('minus',0)">−</button>
+          <button data-sw="capture" onmousedown="handleBtn('capture',1)" onmouseup="handleBtn('capture',0)">截图</button>
+          <button data-sw="plus" onmousedown="handleBtn('plus',1)" onmouseup="handleBtn('plus',0)">+</button>
+          <button data-sw="home" onmousedown="handleBtn('home',1)" onmouseup="handleBtn('home',0)">Home</button>
         </div>
         <div class="abxy">
-          <div></div><button data-sw="x" onmousedown="handleBtn(\'x\',1)" onmouseup="handleBtn('x',0)">X</button><div></div>
-          <button data-sw="y" onmousedown="handleBtn(\'y\',1)" onmouseup="handleBtn('y',0)">Y</button><div></div><button data-sw="a" onmousedown="handleBtn(\'a\',1)" onmouseup="handleBtn('a',0)">A</button>
-          <div></div><button data-sw="b" onmousedown="handleBtn(\'b\',1)" onmouseup="handleBtn('b',0)">B</button><div></div>
+          <div></div><button data-sw="x" onmousedown="handleBtn('x',1)" onmouseup="handleBtn('x',0)">X</button><div></div>
+          <button data-sw="y" onmousedown="handleBtn('y',1)" onmouseup="handleBtn('y',0)">Y</button><div></div><button data-sw="a" onmousedown="handleBtn('a',1)" onmouseup="handleBtn('a',0)">A</button>
+          <div></div><button data-sw="b" onmousedown="handleBtn('b',1)" onmouseup="handleBtn('b',0)">B</button><div></div>
         </div>
       </div>
       <div class="bottom-row">
         <div class="dpad">
-          <div></div><button data-sw="up" onmousedown="handleBtn(\'up\',1)" onmouseup="handleBtn('up',0)" ontouchstart="handleBtn('up',1)" ontouchend="handleBtn('up',0)">↑</button><div></div>
-          <button data-sw="left" onmousedown="handleBtn(\'left\',1)" onmouseup="handleBtn('left',0)" ontouchstart="handleBtn('left',1)" ontouchend="handleBtn('left',0)">←</button><div></div><button data-sw="right" onmousedown="handleBtn(\'right\',1)" onmouseup="handleBtn('right',0)" ontouchstart="handleBtn('right',1)" ontouchend="handleBtn('right',0)">→</button>
-          <div></div><button data-sw="down" onmousedown="handleBtn(\'down\',1)" onmouseup="handleBtn('down',0)" ontouchstart="handleBtn('down',1)" ontouchend="handleBtn('down',0)">↓</button><div></div>
+          <div></div><button data-sw="up" onmousedown="handleBtn('up',1)" onmouseup="handleBtn('up',0)" ontouchstart="handleBtn('up',1)" ontouchend="handleBtn('up',0)">↑</button><div></div>
+          <button data-sw="left" onmousedown="handleBtn('left',1)" onmouseup="handleBtn('left',0)" ontouchstart="handleBtn('left',1)" ontouchend="handleBtn('left',0)">←</button><div></div><button data-sw="right" onmousedown="handleBtn('right',1)" onmouseup="handleBtn('right',0)" ontouchstart="handleBtn('right',1)" ontouchend="handleBtn('right',0)">→</button>
+          <div></div><button data-sw="down" onmousedown="handleBtn('down',1)" onmouseup="handleBtn('down',0)" ontouchstart="handleBtn('down',1)" ontouchend="handleBtn('down',0)">↓</button><div></div>
         </div>
         <div class="stick-area">
           <div class="stick" id="rstick"><div class="knob" id="rknob"></div></div>
-          <button data-sw="r_stick" onmousedown="handleBtn(\'r_stick\',1)" onmouseup="handleBtn('r_stick',0)">R3</button>
+          <button data-sw="r_stick" onmousedown="handleBtn('r_stick',1)" onmouseup="handleBtn('r_stick',0)">R3</button>
           <div id="rstick-bind" style="font-size:8px;color:#0a6;margin-top:2px"></div>
           <button onclick="bindStick('right')" style="font-size:9px;padding:2px 6px;margin-top:2px">换绑</button>
         </div>
