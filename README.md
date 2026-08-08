@@ -74,7 +74,7 @@ Switch 2 Pro(USB)──> procon2-driver ──evdev──> Web UI 后端 ─┘
 | `web/index.html` | Web UI 前端(虚拟/键盘/手柄/Pro2 模式 + 连接/断开 + 录制/回放/列表/循环) |
 | `build_kernel.sh` | WSL2 自定义内核编译脚本(蓝牙+USB+vhci+固件+uinput+hidraw built-in) |
 | `kernel/bzImage3` | 编译好的自定义内核(可直接用,**预编译仅内置 MediaTek MT7922/RZ616 蓝牙固件**,其他蓝牙芯片需按 build_kernel.sh 重编译)。使用:复制到 `C:\Users\<用户>\wslkernel\`,在 `.wslconfig` 设 `kernel=C:\\Users\\<用户>\\wslkernel\\bzImage3`(或直接指向此项目路径) |
-| `joycontrol/` | [joycontrol](https://github.com/mart1nroo/joycontrol) 源码(已 patch Python 3.14 兼容,utils.py) |
+| `joycontrol/` | [joycontrol](https://github.com/mart1nro/joycontrol) 源码(已 patch Python 3.14 兼容,utils.py) |
 | `joycontrol-pluginloader/` | [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) 源码(已 patch,loader.py) |
 | `procon2-driver/` | [procon2-driver](https://github.com/dalmatheo/procon2-driver) 源码(MIT,已 vendor)。读 Switch 2 Pro 手柄 USB 输入并注入为 evdev 虚拟手柄,供 Pro2 模式转发 |
 | `.wslconfig` | WSL 配置(kernel + vmIdleTimeout),复制到 `C:\Users\<用户>\` 使用 |
@@ -229,7 +229,7 @@ MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`
 ## 致谢
 
 本项目使用了以下开源项目:
-- [joycontrol](https://github.com/mart1nroo/joycontrol) - Nintendo Switch 蓝牙手柄模拟
+- [joycontrol](https://github.com/mart1nro/joycontrol) - Nintendo Switch 蓝牙手柄模拟
 - [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) - joycontrol 插件加载器
 - [procon2-driver](https://github.com/dalmatheo/procon2-driver) - Switch 2 Pro Controller Linux 驱动(MIT)
 - [aiohttp](https://github.com/aio-libs/aiohttp) - Python 异步 HTTP/WebSocket
