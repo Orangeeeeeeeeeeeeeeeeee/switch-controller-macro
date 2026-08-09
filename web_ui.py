@@ -212,9 +212,26 @@ class web_ui:
         # Sleep in small chunks so 'stop' interrupts long macro gaps promptly.
         # A single long asyncio.sleep() is not interruptible - stop would wait
         # for the whole gap (macros can have 10s+ pauses) before taking effect.
+        # Uses real elapsed time (not a counter) so intervals are accurate.
         end = time.time() + seconds
         while self._playing and time.time() < end:
-            await asyncio.sleep(min(0.05, end - time.time()))
+            await asyncio.sleep(min(0.05, max(0, end - time.time())))
+
+    async def _release_all(self):
+        # Release every button + center sticks, so each macro/loop iteration
+        # starts from a clean state (no stuck presses eating the next press).
+        cs = self.controller_state
+        if cs is None:
+            return
+        try:
+            for name in ('a', 'b', 'x', 'y', 'l', 'r', 'zl', 'zr', 'plus', 'minus',
+                         'home', 'capture', 'up', 'down', 'left', 'right', 'l_stick', 'r_stick'):
+                cs.button_state.set_button(name, False)
+            cs.l_stick_state.set_center()
+            cs.r_stick_state.set_center()
+            await cs.send()
+        except Exception as e:
+            logger.warning(f'release_all error: {e}')
 
     async def _play(self, macro, loops=1, interval=0):
         if not macro:
@@ -225,6 +242,7 @@ class web_ui:
         loop_count = 0
         while self._playing and (loops == 0 or loop_count < loops):
             loop_count += 1
+            await self._release_all()
             t0 = macro[0]['t'] / 1000.0
             start = time.time()
             for i, e in enumerate(macro):
@@ -233,21 +251,14 @@ class web_ui:
                 target = e['t'] / 1000.0 - t0
                 now = time.time() - start
                 if target > now:
-                    remaining = target - now
-                    if remaining > 0.003:
-                        await self._interruptible_sleep(remaining - 0.003)
+                    await self._interruptible_sleep(target - now)
                     if not self._playing:
                         break
-                    while time.time() - start < target:
-                        pass
                 if not self._playing:
                     break
                 await self._apply(e['ev'])
             if self._playing and interval > 0 and (loops == 0 or loop_count < loops):
-                slept = 0
-                while self._playing and slept < interval:
-                    await asyncio.sleep(0.1)
-                    slept += 0.1
+                await self._interruptible_sleep(interval)
         self._playing = False
         logger.info('play done')
 
@@ -497,6 +508,7 @@ class web_ui:
             for idx, macro in enumerate(macros):
                 if not self._playing or not macro:
                     break
+                await self._release_all()
                 t0 = macro[0]['t'] / 1000.0
                 start = time.time()
                 for i, e in enumerate(macro):
@@ -505,26 +517,16 @@ class web_ui:
                     target = e['t'] / 1000.0 - t0
                     now = time.time() - start
                     if target > now:
-                        remaining = target - now
-                        if remaining > 0.003:
-                            await self._interruptible_sleep(remaining - 0.003)
+                        await self._interruptible_sleep(target - now)
                         if not self._playing:
                             break
-                        while time.time() - start < target:
-                            pass
                     if not self._playing:
                         break
                     await self._apply(e['ev'])
                 if self._playing and macroInterval > 0 and idx < len(macros) - 1:
-                    slept = 0
-                    while self._playing and slept < macroInterval:
-                        await asyncio.sleep(0.1)
-                        slept += 0.1
+                    await self._interruptible_sleep(macroInterval)
             if self._playing and loopInterval > 0 and (loops == 0 or loop_count < loops):
-                slept = 0
-                while self._playing and slept < loopInterval:
-                    await asyncio.sleep(0.1)
-                    slept += 0.1
+                await self._interruptible_sleep(loopInterval)
         self._playing = False
         logger.info('play list stopped/done')
 
