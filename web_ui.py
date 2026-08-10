@@ -373,11 +373,19 @@ class web_ui:
         except Exception as e:
             logger.warning(f'connect failed: {e!r}')
             es = str(e).lower()
-            # "Connection refused" = Switch still holds the slot (e.g. right
-            # after a disconnect); don't scan, just let _conn_manager retry
-            # after a quiet period. Other errors might mean a wrong/stale MAC,
-            # so try discovering the Switch once.
-            if mac and 'refused' not in es and 'errno 111' not in es:
+            if 'refused' in es or 'errno 111' in es:
+                # Switch still holds the controller slot - release it, then retry
+                self._broadcast_status('connecting', '释放 Switch 连接槽...')
+                await self._release_switch()
+                await asyncio.sleep(2)
+                try:
+                    await self._reconnect()
+                    self._broadcast_status('connected', '已连接 Switch')
+                    return
+                except Exception as e2:
+                    logger.warning(f'reconnect after release failed: {e2!r}')
+            elif mac:
+                # maybe a wrong/stale MAC - try discovering the Switch once
                 self._broadcast_status('connecting', '连接失败,搜索 Switch...')
                 found = await self._scan_for_switch()
                 if found and found[0] != mac:
@@ -387,8 +395,6 @@ class web_ui:
                     except Exception:
                         pass
                     logger.info(f'found Switch: {name} ({self._switch_mac})')
-            # auto_reconnect is on and controller_state is None, so _conn_manager
-            # keeps retrying until the Switch releases its slot / becomes reachable
             self.controller_state = None
             self._broadcast_status('connecting', '重连中...')
 
@@ -419,10 +425,24 @@ class web_ui:
                 return (mac, name)
         return None
 
+    async def _release_switch(self):
+        # Force the Switch to free its controller slot by resetting the BT
+        # adapter. After a drop the Switch holds the slot for ~8s and refuses a
+        # new L2CAP ("Connection refused"); resetting hci0 clears it immediately
+        # so disconnect/reconnect work without the wait (or a manual reset).
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                'hciconfig', 'hci0', 'reset',
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            await proc.communicate()
+            logger.info('BT adapter reset - released Switch controller slot')
+        except Exception as e:
+            logger.warning(f'bt reset error: {e}')
+
     async def _disconnect(self):
-        # "断开连接" button: close the BT transport and stop auto-reconnect so
-        # it stays disconnected until the user connects again. Holds the lock so
-        # an in-flight _reconnect can't overwrite the disconnect.
+        # "断开连接" button: close the BT transport, release the Switch's
+        # controller slot, and stop auto-reconnect. Holds the lock so an
+        # in-flight _reconnect can't overwrite the disconnect.
         async with self._reconnect_lock:
             self._auto_reconnect = False
             self._playing = False
@@ -433,16 +453,14 @@ class web_ui:
                 except Exception as e:
                     logger.warning(f'close transport error: {e}')
                 self._transport = None
+        await self._release_switch()
         self._broadcast_status('disconnected', '已断开')
         logger.info('disconnected from Switch')
 
     async def _force_reconnect(self):
-        # "重连" button: close, wait a quiet period for the Switch to release
-        # the controller slot, then reconnect once. Fast retries right after a
-        # close either get refused (Switch holds the slot) or hang in
-        # sock_connect (Switch ignores), so we pause _conn_manager during the
-        # quiet window.
-        self._broadcast_status('connecting', '重连中...(等待 Switch 释放)')
+        # "重连" button: close the connection, release the Switch's slot (BT
+        # reset), then reconnect - no need to wait out the Switch's ~8s hold.
+        self._broadcast_status('connecting', '重连中...')
         async with self._reconnect_lock:
             self._auto_reconnect = False
             if self._transport is not None:
@@ -452,7 +470,8 @@ class web_ui:
                     pass
                 self._transport = None
             self.controller_state = None
-            await asyncio.sleep(8)
+            await self._release_switch()
+            await asyncio.sleep(2)  # let the adapter come back up after reset
             self._auto_reconnect = True
             try:
                 await self._reconnect_locked()
