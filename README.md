@@ -220,7 +220,36 @@ MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`
 - pluginloader 类名必须 = 文件名
 - 回放时间戳毫秒/1000 转秒
 - L2CAP 阻塞 connect 冻结事件循环 -> 线程池 + settimeout
-- Switch 断开后重连需安静期(快速重试会重置其释放计时器)
+- Switch 断开后持连接槽约 8 秒(重连报 Connection refused)-> 断开/重连已自动重置蓝牙(hci0 reset)释放
+
+## 更新日志
+
+### 2026-08-11
+- **Pro2 模式支持录制宏**:Pro2 输入(后端)广播回前端录制;按钮全录,摇杆只录变化(>0.05 阈值,防高频事件撑爆宏)
+- **断开/重连自动释放 Switch 连接槽**:断开、重连、连接按钮遇 Connection refused 时自动重置蓝牙(`hciconfig hci0 reset`)强制释放,不再需要等 8 秒或手动重置
+- **procon2-driver 全面修复**(vendored 源码,编译通过):
+  - `runReadLoop` 瞬时 USB 错误不再死亡(原:断连循环)
+  - goroutine 加 recover,panic 不再杀死整个驱动
+  - `SendInitSequence` 失败返回错误(原:吞错误导致"连上即断")
+  - uinput 写 EAGAIN 重试 + 全部 ioctl 错误检查
+  - `parseReport` 校验 report ID(消除幽灵按键)
+  - 移除 SetAutoDetach(会 detach usbhid 导致 hidraw 消失)
+  - 扫描 goroutine 停止机制、设备句柄泄漏修复、`os` 包替换废弃 `ioutil`
+- **蓝牙断连后自动恢复**:修复 joycontrol `connection_lost` 对 Task 调 `set_exception` 的 RuntimeError(原:断连后卡死不重连)
+
+### 2026-08-10
+- **Xbox 手柄后台断连修复**:gpLoop 从 `requestAnimationFrame` 改 `setInterval`(浏览器后台标签页不再暂停手柄轮询)
+- **宏间隔/列表间隔吞按键修复**:去掉 busy-wait(阻塞事件循环)、间隔改用真实时间、每个宏/循环开始时释放所有按键
+- **Web UI 按键无法按下修复**:按钮 `onmousedown` 的 `\'` 是 JS 语法错误,改普通引号
+- README 链接修复(joycontrol `mart1nroo` → `mart1nro`)
+
+### 2026-08-08
+- **Web UI 与 Switch 连接解耦**:web 服务器先启动,连接放后台重试,断连/连不上页面照常可用
+- **连接/断开/重连按钮**:「连接Switch」(已配置直连,未配置自动蓝牙搜索)、「断开」(清理状态)、「重连」
+- **Switch MAC 配置**:`switch_config.json`(git 忽略、部署自动创建),页面设置或环境变量 `SWITCH_MAC`
+- **Pro2 模式**:Switch 2 Pro 手柄(USB 直通 WSL)输入转发到 Switch,无需映射;vendor procon2-driver 源码
+- **状态实时推送**:连接状态(连接中/已连接/已断开)实时显示
+- 修复:A/B 按钮映射(procon2 用 Xbox 命名)、宏列表停止(长间隔可中断)、蓝牙连接挂死(sock_connect 线程池 + 超时)
 
 ## 维护说明
 
