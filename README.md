@@ -53,6 +53,25 @@ AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
 | **键盘**(可选) | 任意键盘,用于键盘模式 |
 | **WSL2** | Windows 11 + WSL2 + 自编内核(见下) |
 
+### 蓝牙适配器兼容性
+
+本项目要求蓝牙**必须走 USB 总线**(usbipd 直通到 WSL)。据此分类:
+
+| 状态 | 芯片/类型 | 说明 |
+|---|---|---|
+| ✅ **推荐** | MediaTek MT7921 / MT7922 / RZ616 | 本项目测试用(RZ616 / MT7922,VID 0e8d:0616),预编译内核已内置固件 |
+| ✅ **推荐** | Realtek USB 蓝牙(RTL8761B / RTL8821 等) | 内核已 enable BT_HCIBTUSB_REALTEK,固件在 firmware/ |
+| ❌ **不兼容** | Intel 内置蓝牙(Wireless-AC 9560 / AX200 / AX201 / AX210 等) | ① joycontrol 已知断连/配对问题 ② 内置是 PCIe 不是 USB,无法 usbipd 直通 |
+| ❌ **不兼容** | 所有内置(非 USB 总线)蓝牙(Realtek / MediaTek / Broadcom 二合一) | 不走 USB 总线,usbipd 直通不可用 |
+| ⚠️ **兼容性差** | Killer 网卡蓝牙(AX1650 等,Intel 芯片换皮) | 同 Intel |
+| ⚠️ **兼容性差** | Broadcom 蓝牙(BCM20702 等,老笔记本常见) | 有报告断连/不识别 |
+| ⚠️ **参差** | 廉价 CSR 4.0 USB 适配器(VID 0a12:0001) | 部分可用部分不稳定,不推荐 |
+
+判断方法(第 0 步硬件识别):
+- 设备管理器「蓝牙」看芯片型号
+- `usbipd list` 确认蓝牙是否走 USB 总线(能列出就是 USB)
+- Intel 内置 / 蓝牙不走 USB -> 换 USB 蓝牙适配器(MediaTek 或 Realtek)
+
 ## 原理
 
 ```
