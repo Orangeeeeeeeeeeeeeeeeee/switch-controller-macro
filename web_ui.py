@@ -23,6 +23,7 @@ class web_ui:
         self.controller_state = controller_state
         self._playing = False
         self._pro2_enabled = False
+        self._recording = False
         self._reconnect_lock = asyncio.Lock()
         self._loop = None
         self._switch_mac = ''
@@ -178,6 +179,9 @@ class web_ui:
                     elif ev.get('type') == 'pro2':
                         self._pro2_enabled = bool(ev.get('enabled'))
                         logger.info(f'pro2 mode enabled={self._pro2_enabled}')
+                    elif ev.get('type') == 'rec':
+                        self._recording = bool(ev.get('enabled'))
+                        logger.info(f'recording={self._recording}')
                     elif ev.get('type') == 'get_status':
                         if self.controller_state is not None:
                             state, msg = 'connected', '已连接 Switch'
@@ -278,6 +282,7 @@ class web_ui:
         }
         STICK_AXIS = {0: ('left', 'h'), 1: ('left', 'v'), 3: ('right', 'h'), 4: ('right', 'v')}
         stick = {'left': {'h': 0.0, 'v': 0.0}, 'right': {'h': 0.0, 'v': 0.0}}
+        lastRecStick = {'left': (0.0, 0.0), 'right': (0.0, 0.0)}
         logger.info('NS controller reader started')
         while True:
             dev = self._open_ns_device(evdev)
@@ -293,7 +298,10 @@ class web_ui:
                         if e.type == 1:
                             name = BTN_MAP.get(e.code)
                             if name:
-                                self._apply_ts({'type': 'button', 'name': name, 'pressed': bool(e.value)})
+                                ev = {'type': 'button', 'name': name, 'pressed': bool(e.value)}
+                                self._apply_ts(ev)
+                                if self._recording:
+                                    self._broadcast_record(ev)
                         elif e.type == 3:
                             if e.code in STICK_AXIS:
                                 side, axis = STICK_AXIS[e.code]
@@ -303,7 +311,14 @@ class web_ui:
                                 if axis == 'v':
                                     nv = -nv
                                 stick[side][axis] = nv
-                                self._apply_ts({'type': 'stick', 'stick': side, 'h': stick[side]['h'], 'v': stick[side]['v']})
+                                ev = {'type': 'stick', 'stick': side, 'h': stick[side]['h'], 'v': stick[side]['v']}
+                                self._apply_ts(ev)
+                                if self._recording:
+                                    h, v = stick[side]['h'], stick[side]['v']
+                                    lh, lv = lastRecStick[side]
+                                    if abs(h - lh) > 0.05 or abs(v - lv) > 0.05:
+                                        lastRecStick[side] = (h, v)
+                                        self._broadcast_record(ev)
                     except Exception as ex:
                         logger.warning(f'ns apply error: {ex}')
             except Exception as e:
@@ -340,6 +355,23 @@ class web_ui:
             asyncio.run_coroutine_threadsafe(self._apply(ev), self._loop)
         except Exception as e:
             logger.warning(f'ns dispatch error: {e}')
+
+    def _broadcast_record(self, ev):
+        # From the NS reader thread: send a Pro2 input event to the web UI so it
+        # can be recorded into the macro (Pro2 input bypasses the frontend, so
+        # it would otherwise never be captured).
+        try:
+            asyncio.run_coroutine_threadsafe(self._broadcast_record_coro(ev), self._loop)
+        except Exception as e:
+            logger.warning(f'record dispatch error: {e}')
+
+    async def _broadcast_record_coro(self, ev):
+        msg = {'type': 'record', 'ev': ev}
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                pass
 
     async def _connect_from_ui(self):
         # Triggered by the "连接 Switch" button. If already connected, just

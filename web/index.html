@@ -233,7 +233,7 @@ function updateStickFromKeys(){
 }
 const SWITCH_BTNS=['a','b','x','y','l','r','zl','zr','plus','minus','home','capture','up','down','left','right','l_stick','r_stick'];
 
-function connect(){const h=location.hostname||'127.0.0.1';ws=new WebSocket('ws://'+h+':8080/ws');ws.onopen=()=>{send({type:'pro2',enabled:mode==='pro2'});send({type:'get_status'});};ws.onmessage=(e)=>{var d;try{d=JSON.parse(e.data);}catch(err){return;}if(d.type==='status'){var s=document.getElementById('status');s.textContent=d.msg||d.state;s.className='status '+(d.state==='connected'?'ok':d.state==='disconnected'?'err':'wait');}};ws.onclose=()=>{const s=document.getElementById('status');s.textContent='断开,重连';s.className='status err';setTimeout(connect,2000);};ws.onerror=()=>{};}
+function connect(){const h=location.hostname||'127.0.0.1';ws=new WebSocket('ws://'+h+':8080/ws');ws.onopen=()=>{send({type:'pro2',enabled:mode==='pro2'});send({type:'get_status'});};ws.onmessage=(e)=>{var d;try{d=JSON.parse(e.data);}catch(err){return;}if(d.type==='status'){var s=document.getElementById('status');s.textContent=d.msg||d.state;s.className='status '+(d.state==='connected'?'ok':d.state==='disconnected'?'err':'wait');}else if(d.type==='record'&&recording){macro.push({t:performance.now()-recT0,ev:d.ev});document.getElementById('rec-count').textContent=macro.length+' 事件';}};ws.onclose=()=>{const s=document.getElementById('status');s.textContent='断开,重连';s.className='status err';setTimeout(connect,2000);};ws.onerror=()=>{};}
 connect();
 function send(ev){if(ws&&ws.readyState===1)ws.send(JSON.stringify(ev));if(recording)macro.push({t:performance.now()-recT0,ev:ev});document.getElementById('rec-count').textContent=macro.length+' 事件';}
 function btn(n,p){send({type:'button',name:n,pressed:!!p});}
@@ -274,7 +274,7 @@ function setMode(m){
     if(el)el.style.display=hm===m?'block':'none';
   });
 }
-function toggleRec(){recording=!recording;const b=document.getElementById('rec-btn');b.classList.toggle('rec-active',!recording);b.textContent=recording?'停止录':'录制';if(recording){macro=[];recT0=performance.now();}}
+function toggleRec(){recording=!recording;const b=document.getElementById('rec-btn');b.classList.toggle('rec-active',!recording);b.textContent=recording?'停止录':'录制';if(recording){macro=[];recT0=performance.now();}if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'rec',enabled:recording}));}
 function playMacro(){if(!macro.length){alert('宏为空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let i=parseFloat(document.getElementById('interval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play',macro:macro,loops:l,interval:i}));}
 function playList(){if(!macroList.length){alert('列表空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let mi=parseFloat(document.getElementById('macroInterval').value)||0;let li=parseFloat(document.getElementById('loopInterval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play_list',macros:macroList,loops:l,macroInterval:mi,loopInterval:li}));}
 function stopAll(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'stop'}));if(recording)toggleRec();}
