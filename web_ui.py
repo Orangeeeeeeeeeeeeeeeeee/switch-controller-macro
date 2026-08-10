@@ -123,18 +123,20 @@ class web_ui:
                     delay = min(delay + 2, 15)
                 continue
             try:
-                await self.controller_state.send()
+                await asyncio.wait_for(self.controller_state.send(), timeout=2)
                 fail = 0
             except asyncio.CancelledError:
                 raise
+            except asyncio.TimeoutError:
+                fail += 10  # send hung (report loop dead) - force reconnect
             except Exception:
                 fail += 1
-                if fail >= 10:
-                    logger.info('connection lost, reconnecting...')
-                    self._broadcast_status('disconnected', '已断开,重连中...')
-                    self.controller_state = None
-                    self._broadcast_status('connecting', '连接中...')
-                    fail = 0
+            if fail >= 10:
+                logger.info('connection lost, reconnecting...')
+                self._broadcast_status('disconnected', '已断开,重连中...')
+                self.controller_state = None
+                self._broadcast_status('connecting', '连接中...')
+                fail = 0
             await asyncio.sleep(1 / 60)
 
     async def _index(self, request):

@@ -114,8 +114,14 @@ class ControllerProtocol(BaseProtocol):
             asyncio.ensure_future(self.transport.close())
             self.transport = None
 
-            if self._controller_state_sender is not None:
-                self._controller_state_sender.set_exception(NotConnectedError)
+            # Wake up any pending send() instead of set_exception - the sender is
+            # a Task (from ensure_future) and Task.set_exception raises RuntimeError
+            # ("Task does not support set_exception"), which kills the 66Hz report
+            # loop and leaves send() hanging forever (no reconnect). Setting the
+            # event unblocks the pending send(); the NEXT send() raises
+            # NotConnectedError since transport is now None, so the caller detects
+            # the drop and reconnects.
+            self._controller_state.sig_is_send.set()
 
     def error_received(self, exc: Exception) -> None:
         # TODO?
