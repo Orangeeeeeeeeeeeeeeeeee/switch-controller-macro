@@ -28,6 +28,10 @@ type Controller struct {
 
 // NewController accepts an already open USB device and initializes the interface
 func NewController(dev *gousb.Device, configNum, ifaceNum int) (*Controller, error) {
+	// NOTE: do NOT SetAutoDetach here - it detaches usbhid from the HID
+	// interface too, which removes the hidraw node that the reader needs.
+	// A "device or resource busy" on claim is a stale usbfs from an unclean
+	// exit; clear it by re-attaching the controller (usbipd detach/attach).
 	intf, epOut, epIn, err := claimInterface(dev, configNum, ifaceNum)
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim interface: %w", err)
