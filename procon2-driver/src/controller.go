@@ -192,5 +192,13 @@ func claimInterface(dev *gousb.Device, configNum int, ifaceNum int) (*gousb.Inte
 		}
 	}
 
+	// No usable endpoints -> the controller can't be initialized; return an
+	// error instead of silently succeeding with nil endpoints (which made the
+	// driver "connect then drop" because no init packets were actually sent).
+	if epOut == nil {
+		intf.Close()
+		return nil, nil, nil, fmt.Errorf("no bulk OUT endpoint found on interface %d", ifaceNum)
+	}
+
 	return intf, epOut, epIn, nil
 }

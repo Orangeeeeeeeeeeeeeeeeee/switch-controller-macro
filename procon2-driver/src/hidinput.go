@@ -123,7 +123,10 @@ func (r *HIDReader) runReadLoop() {
 				continue
 			}
 			if n >= 6 {
-				state := r.parseReport(r.buffer[:n])
+				state, valid := r.parseReport(r.buffer[:n])
+				if !valid {
+					continue
+				}
 				// Non-blocking send: always keep the stateChan updated with the LATEST report
 				select {
 				case r.stateChan <- state:
@@ -256,8 +259,18 @@ func (r *HIDReader) sendInitCommands() error {
 	return nil
 }
 
-func (r *HIDReader) parseReport(rep []byte) ControllerState {
+func (r *HIDReader) parseReport(rep []byte) (ControllerState, bool) {
 	state := ControllerState{}
+	if len(rep) == 0 {
+		return state, false
+	}
+	// Only 0x30 (full state) / 0x09 reports carry button/stick data. Parsing
+	// other report types (e.g. 0x21 SPI flash replies) as buttons produced
+	// ghost inputs.
+	reportID := rep[0]
+	if reportID != 0x30 && reportID != 0x09 {
+		return state, false
+	}
 
 	// Parse buttons
 	if len(rep) > 3 {
@@ -293,12 +306,9 @@ func (r *HIDReader) parseReport(rep []byte) ControllerState {
 	}
 
 	// Parse joysticks
-	if len(rep) > 0 {
-		reportID := rep[0]
-		state.Joysticks = r.parseJoysticks(rep, reportID)
-	}
+	state.Joysticks = r.parseJoysticks(rep, reportID)
 
-	return state
+	return state, true
 }
 
 func (r *HIDReader) parseJoysticks(data []byte, reportID byte) JoystickValues {

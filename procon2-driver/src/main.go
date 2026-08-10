@@ -68,6 +68,11 @@ func (m *Manager) Scan() {
 	})
 
 	if err != nil {
+		// OpenDevices can return partially-opened devices together with an error
+		// - close them to avoid leaking USB handles (runs every 2s).
+		for _, d := range devs {
+			d.Close()
+		}
 		log.Printf("Error scanning USB: %v", err)
 		return
 	}
@@ -148,7 +153,9 @@ func (m *Manager) startDriver(dev *gousb.Device, slotIndex int, uid string) (*Ac
 	// 4. Set LEDs (Player Number)
 	// We wait a moment after init before setting LEDs
 	time.Sleep(100 * time.Millisecond)
-	ctrl.SetPlayerLEDs(slotIndex + 1)
+	if err := ctrl.SetPlayerLEDs(slotIndex + 1); err != nil {
+		log.Printf("⚠️ SetPlayerLEDs failed: %v", err)
+	}
 
 	// 5. Setup HID Reader
 	if ctrl.GetHIDPath() == "" {
@@ -206,7 +213,9 @@ func (m *Manager) driverLoop(ad *ActiveDriver) {
 
 		// Cleanup resources
 		if ad.GrabFile != nil {
-			ioctl(ad.GrabFile.Fd(), EVIOCGRAB, 0)
+			if err := ioctl(ad.GrabFile.Fd(), EVIOCGRAB, 0); err != nil {
+				log.Printf("⚠️ EVIOCGRAB release failed: %v", err)
+			}
 			ad.GrabFile.Close()
 		}
 		ad.Driver.Close()
@@ -239,7 +248,16 @@ func (m *Manager) driverLoop(ad *ActiveDriver) {
 				continue
 			}
 			failCount = 0
-			ad.Driver.virtual.Update(state)
+			if err := ad.Driver.virtual.Update(state); err != nil {
+				// Real uinput write failure (EAGAIN was already retried in
+				// writeEvent) - count it and tear down after enough, so Scan
+				// re-creates the virtual gamepad.
+				log.Printf("Player %d uinput write error: %v", ad.Slot+1, err)
+				failCount++
+				if failCount > 20 {
+					return
+				}
+			}
 		}
 	}
 }
@@ -285,9 +303,18 @@ func NewVirtualGamepad(playerNum int) (*VirtualGamepad, error) {
 	}
 
 	// Basic Setup (Keys, Axes, etc) - Same as original
-	ioctl(f.Fd(), uiSetEvBit, uintptr(evKey))
-	ioctl(f.Fd(), uiSetEvBit, uintptr(evAbs))
-	ioctl(f.Fd(), uiSetEvBit, uintptr(evSyn))
+	if err := ioctl(f.Fd(), uiSetEvBit, uintptr(evKey)); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("UI_SET_EVBIT ev_key: %w", err)
+	}
+	if err := ioctl(f.Fd(), uiSetEvBit, uintptr(evAbs)); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("UI_SET_EVBIT ev_abs: %w", err)
+	}
+	if err := ioctl(f.Fd(), uiSetEvBit, uintptr(evSyn)); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("UI_SET_EVBIT ev_syn: %w", err)
+	}
 
 	buttons := []uint16{
 		btnSouth, btnEast, btnNorth, btnWest,
@@ -297,12 +324,18 @@ func NewVirtualGamepad(playerNum int) (*VirtualGamepad, error) {
 		btnDpadUp, btnDpadDown, btnDpadLeft, btnDpadRight,
 	}
 	for _, btn := range buttons {
-		ioctl(f.Fd(), uiSetKeyBit, uintptr(btn))
+		if err := ioctl(f.Fd(), uiSetKeyBit, uintptr(btn)); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("UI_SET_KEYBIT %#x: %w", btn, err)
+		}
 	}
 
 	axes := []uint16{absX, absY, absRX, absRY}
 	for _, ax := range axes {
-		ioctl(f.Fd(), uiSetAbsBit, uintptr(ax))
+		if err := ioctl(f.Fd(), uiSetAbsBit, uintptr(ax)); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("UI_SET_ABSBIT %#x: %w", ax, err)
+		}
 	}
 
 	// Device Setup with Naming
@@ -327,7 +360,10 @@ func NewVirtualGamepad(playerNum int) (*VirtualGamepad, error) {
 				min: -32768, max: 32767, fuzz: 16, flat: 128,
 			},
 		}
-		ioctlSetup(f.Fd(), uiAbsSetup, unsafe.Pointer(&absSetup))
+		if err := ioctlSetup(f.Fd(), uiAbsSetup, unsafe.Pointer(&absSetup)); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("UI_ABS_SETUP %#x: %w", ax, err)
+		}
 	}
 
 	if err := ioctl(f.Fd(), uiDevCreate, 0); err != nil {
@@ -453,6 +489,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Scanning Loop
+	scanStop := make(chan struct{})
 	go func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -460,14 +497,20 @@ func main() {
 			}
 		}()
 		for {
-			manager.Scan()
-			time.Sleep(2 * time.Second)
+			select {
+			case <-scanStop:
+				return
+			default:
+				manager.Scan()
+				time.Sleep(2 * time.Second)
+			}
 		}
 	}()
 
 	log.Println("✅ Service Ready. Waiting for controllers...")
 	<-sigChan
 	log.Println("\n🛑 Shutdown signal received. Cleaning up...")
+	close(scanStop) // stop scanning BEFORE ctx.Close() so no race on the closed context
 	manager.Cleanup()
 	log.Println("👋 Done.")
 }
@@ -518,57 +561,74 @@ type VirtualGamepad struct {
 }
 
 func (v *VirtualGamepad) Update(state ControllerState) error {
-	v.sendButton(btnSouth, state.A)
-	v.sendButton(btnEast, state.B)
-	v.sendButton(btnNorth, state.X)
-	v.sendButton(btnWest, state.Y)
-	v.sendButton(btnTL, state.L)
-	v.sendButton(btnTR, state.R)
-	v.sendButton(btnTL2, state.ZL)
-	v.sendButton(btnTR2, state.ZR)
-	v.sendButton(btnDpadUp, state.DpadUp)
-	v.sendButton(btnDpadDown, state.DpadDown)
-	v.sendButton(btnDpadLeft, state.DpadLeft)
-	v.sendButton(btnDpadRight, state.DpadRight)
-	v.sendButton(btnStart, state.Plus)
-	v.sendButton(btnSelect, state.Minus)
-	v.sendButton(btnMode, state.Home)
-	v.sendButton(btnThumbL, state.LStickPress)
-	v.sendButton(btnThumbR, state.RStickPress)
+	var firstErr error
+	report := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	report(v.sendButton(btnSouth, state.A))
+	report(v.sendButton(btnEast, state.B))
+	report(v.sendButton(btnNorth, state.X))
+	report(v.sendButton(btnWest, state.Y))
+	report(v.sendButton(btnTL, state.L))
+	report(v.sendButton(btnTR, state.R))
+	report(v.sendButton(btnTL2, state.ZL))
+	report(v.sendButton(btnTR2, state.ZR))
+	report(v.sendButton(btnDpadUp, state.DpadUp))
+	report(v.sendButton(btnDpadDown, state.DpadDown))
+	report(v.sendButton(btnDpadLeft, state.DpadLeft))
+	report(v.sendButton(btnDpadRight, state.DpadRight))
+	report(v.sendButton(btnStart, state.Plus))
+	report(v.sendButton(btnSelect, state.Minus))
+	report(v.sendButton(btnMode, state.Home))
+	report(v.sendButton(btnThumbL, state.LStickPress))
+	report(v.sendButton(btnThumbR, state.RStickPress))
 
 	lx := v.applyDeadzone(state.Joysticks.LX)
 	ly := v.applyDeadzone(-state.Joysticks.LY)
 	rx := v.applyDeadzone(state.Joysticks.RX)
 	ry := v.applyDeadzone(-state.Joysticks.RY)
 
-	v.sendAxis(absX, int32(lx*32767))
-	v.sendAxis(absY, int32(ly*32767))
-	v.sendAxis(absRX, int32(rx*32767))
-	v.sendAxis(absRY, int32(ry*32767))
+	report(v.sendAxis(absX, int32(lx*32767)))
+	report(v.sendAxis(absY, int32(ly*32767)))
+	report(v.sendAxis(absRX, int32(rx*32767)))
+	report(v.sendAxis(absRY, int32(ry*32767)))
 
-	v.sendSync()
+	report(v.sendSync())
 	v.lastState = state
-	return nil
+	return firstErr
 }
 
-func (v *VirtualGamepad) sendButton(code uint16, pressed bool) {
+func (v *VirtualGamepad) sendButton(code uint16, pressed bool) error {
 	val := int32(0)
 	if pressed {
 		val = 1
 	}
-	v.writeEvent(evKey, code, val)
+	return v.writeEvent(evKey, code, val)
 }
-func (v *VirtualGamepad) sendAxis(code uint16, value int32) {
-	v.writeEvent(evAbs, code, value)
+func (v *VirtualGamepad) sendAxis(code uint16, value int32) error {
+	return v.writeEvent(evAbs, code, value)
 }
-func (v *VirtualGamepad) sendSync() {
-	v.writeEvent(evSyn, 0, 0)
+func (v *VirtualGamepad) sendSync() error {
+	return v.writeEvent(evSyn, 0, 0)
 }
-func (v *VirtualGamepad) writeEvent(typ, code uint16, value int32) {
+func (v *VirtualGamepad) writeEvent(typ, code uint16, value int32) error {
 	var tv syscall.Timeval
-	syscall.Gettimeofday(&tv)
+	_ = syscall.Gettimeofday(&tv)
 	event := inputEvent{time: tv, typ: typ, code: code, value: value}
-	syscall.Write(int(v.file.Fd()), (*(*[unsafe.Sizeof(event)]byte)(unsafe.Pointer(&event)))[:])
+	b := (*(*[unsafe.Sizeof(event)]byte)(unsafe.Pointer(&event)))[:]
+	// uinput is opened O_NONBLOCK - on EAGAIN (kernel event buffer full) retry
+	// briefly instead of silently dropping the event.
+	for i := 0; i < 100; i++ {
+		_, err := syscall.Write(int(v.file.Fd()), b)
+		if err == syscall.EAGAIN {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		return err
+	}
+	return syscall.EAGAIN
 }
 func (v *VirtualGamepad) applyDeadzone(value float64) float64 {
 	if value > -v.deadzone && value < v.deadzone {

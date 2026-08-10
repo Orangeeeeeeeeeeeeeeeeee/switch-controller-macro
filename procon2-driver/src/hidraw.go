@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,7 +12,7 @@ import (
 // GetHidrawForUSB finds the hidraw path for a specific USB Bus and Device Address
 func GetHidrawForUSB(targetBus int, targetAddr int) (string, error) {
 	base := "/sys/class/hidraw"
-	entries, err := ioutil.ReadDir(base)
+	entries, err := os.ReadDir(base)
 	if err != nil {
 		return "", fmt.Errorf("reading %s: %w", base, err)
 	}
@@ -36,7 +36,7 @@ func GetHidrawForUSB(targetBus int, targetAddr int) (string, error) {
 // GetEvdevForUSB finds the /dev/input/eventX path for a specific USB Bus/Address
 func GetEvdevForUSB(targetBus int, targetAddr int) (string, error) {
 	base := "/sys/class/input"
-	entries, err := ioutil.ReadDir(base)
+	entries, err := os.ReadDir(base)
 	if err != nil {
 		return "", fmt.Errorf("reading %s: %w", base, err)
 	}
@@ -91,7 +91,7 @@ func matchesUSBDevice(startPath string, targetBus, targetAddr int) bool {
 }
 
 func readIntFile(path string) (int, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
 	}
