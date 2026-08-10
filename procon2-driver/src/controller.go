@@ -139,18 +139,22 @@ func (c *Controller) SendInitSequence() error {
 	}
 
 	log.Println("Sending initialization sequence...")
+	if c.epOut == nil {
+		return fmt.Errorf("output endpoint not connected (controller USB init missing)")
+	}
 	for i, p := range packets {
-		if c.epOut != nil {
-			if _, err := c.epOut.Write(p); err != nil {
-				log.Printf("Failed to write packet %d: %v", i+1, err)
-			}
-			time.Sleep(15 * time.Millisecond) // Slight delay between packets
+		if _, err := c.epOut.Write(p); err != nil {
+			// Fail fast: if any init packet fails the controller is NOT in
+			// input mode 0x30 and won't send reports - report the error instead
+			// of silently succeeding (which caused "connect then drop" cycles).
+			return fmt.Errorf("failed to write init packet %d: %w", i+1, err)
+		}
+		time.Sleep(15 * time.Millisecond) // Slight delay between packets
 
-			// Try to drain input to prevent buffer overflow
-			if c.epIn != nil {
-				buf := make([]byte, 64)
-				c.epIn.Read(buf)
-			}
+		// Try to drain input to prevent buffer overflow
+		if c.epIn != nil {
+			buf := make([]byte, 64)
+			c.epIn.Read(buf)
 		}
 	}
 	return nil

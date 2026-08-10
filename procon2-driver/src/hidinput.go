@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"time"
@@ -98,6 +99,11 @@ func NewHIDReader(hidPath string, cal JoystickCalibration) (*HIDReader, error) {
 
 // runReadLoop is the ONLY goroutine that reads from the file
 func (r *HIDReader) runReadLoop() {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("runReadLoop panic recovered: %v", rec)
+		}
+	}()
 	for {
 		select {
 		case <-r.stopChan:
@@ -105,8 +111,16 @@ func (r *HIDReader) runReadLoop() {
 		default:
 			n, err := r.file.Read(r.buffer[:])
 			if err != nil {
-				r.errChan <- err
-				return
+				// Report the error (non-blocking) but DO NOT return - transient
+				// USB errors (device reset, EMI, cable wobble) must not kill the
+				// reader. Keep retrying; if the device is truly gone the caller
+				// sees repeated errors/timeouts and tears down via driverLoop.
+				select {
+				case r.errChan <- err:
+				default:
+				}
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
 			if n >= 6 {
 				state := r.parseReport(r.buffer[:n])

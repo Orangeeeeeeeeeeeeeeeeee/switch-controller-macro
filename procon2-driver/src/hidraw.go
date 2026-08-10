@@ -100,8 +100,8 @@ func readIntFile(path string) (int, error) {
 
 func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
+	if err != nil {
+		return false // includes os.IsNotExist AND other errors (EACCES etc) - avoid nil deref
 	}
 	return !info.IsDir()
 }

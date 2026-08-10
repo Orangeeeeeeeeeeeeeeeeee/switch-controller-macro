@@ -187,6 +187,11 @@ func (m *Manager) startDriver(dev *gousb.Device, slotIndex int, uid string) (*Ac
 	ad.WG.Add(1)
 	go func() {
 		defer ad.WG.Done()
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("driverLoop panic recovered: %v", rec)
+			}
+		}()
 		m.driverLoop(ad)
 	}()
 
@@ -449,6 +454,11 @@ func main() {
 
 	// Scanning Loop
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("scan loop panic recovered: %v", rec)
+			}
+		}()
 		for {
 			manager.Scan()
 			time.Sleep(2 * time.Second)
