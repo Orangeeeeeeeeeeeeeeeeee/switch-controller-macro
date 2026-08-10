@@ -15,7 +15,7 @@
 0. 先识别硬件:查蓝牙适配器(设备管理器「蓝牙」或 usbipd list)确认芯片型号和是否走 USB 总线;查是否有 Xbox 无线手柄。根据硬件决定:
    - MediaTek MT7922/RZ616 -> 可直接用预编译内核 kernel/bzImage3
    - 其他蓝牙芯片 -> 需按 build_kernel.sh 重编译(蓝牙固件在 firmware/)
-   - Intel 蓝牙 -> 兼容性差,建议换 USB 蓝牙适配器
+   - Intel 内置蓝牙(非 USB 总线)-> usbipd 直通不可用,需 USB 蓝牙适配器
    - 蓝牙不走 USB 总线(如内置 PCIe/ACPI)-> usbipd 直通不可用,需 USB 蓝牙适配器
 1. 检查/安装 WSL2 + Ubuntu(未装则 wsl --install -d Ubuntu,并开启 systemd)
 2. 配置内核:把 kernel/bzImage3 放 C:\Users\<用户名>\wslkernel\,按 README 配 .wslconfig(kernel + vmIdleTimeout=-1),wsl --shutdown 重启
@@ -26,7 +26,7 @@
 7. (可选,Pro2 模式)WSL 装 `golang libusb-1.0-0-dev python3-dev` + `pip3 install evdev`,`modprobe uinput`;`cd procon2-driver && go build -o procon2-driver ./src`;USB 线连 Switch 2 Pro 手柄,usbipd 直通;`sudo ./procon2-driver --daemon &` 注入 evdev
 8. 浏览器访问 http://<WSL IP>:8080 测试(虚拟/键盘/手柄/Pro2 模式 + 绑定/换绑/鼠标摇杆 + 录制/回放/宏列表)
 
-硬件:USB 蓝牙适配器(推荐 MediaTek/Realtek,Intel 兼容性差)。Xbox 手柄可选。Switch 2 Pro 手柄(Pro2 模式,USB 线)可选。
+硬件:USB 蓝牙适配器(推荐 MediaTek/Realtek;内置非 USB 蓝牙无法 usbipd 直通)。Xbox 手柄可选。Switch 2 Pro 手柄(Pro2 模式,USB 线)可选。
 遇到问题排查:蓝牙 detach、Switch 断开(Connection reset)、固件加载 -2(CONFIG_EXTRA_FIRMWARE built-in)、Python 3.14 get_event_loop(patch utils.py/loader.py)、端口 8080 占用(pkill web_ui.py)、Pro2 无输入(procon2 是否在跑、uinput 是否加载、手柄是否 usbipd 直通)。
 ```
 
@@ -46,7 +46,7 @@ AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
 
 | 硬件 | 说明 |
 |---|---|
-| **PC 蓝牙适配器** | USB 蓝牙适配器(测试用 MediaTek RZ616 / MT7922,VID 0e8d:0616)。需走 USB 总线(usbipd 可直通)。Intel 蓝牙兼容性差,不推荐。 |
+| **PC 蓝牙适配器** | USB 蓝牙适配器(测试用 MediaTek RZ616 / MT7922,VID 0e8d:0616)。需走 USB 总线(usbipd 可直通)。内置(非 USB)蓝牙如 Intel 二合一无法 usbipd 直通。 |
 | **Nintendo Switch** | 任意 Switch 主机(未破解),蓝牙可达(约 10 米) |
 | **Switch 2 Pro 手柄**(可选) | USB 线连 PC,用于 Pro2 模式(输入转发到 Switch) |
 | **Xbox 手柄**(可选) | Xbox 无线手柄 + Xbox 无线适配器(USB dongle),用于手柄模式实时控制/录制 |
@@ -61,15 +61,14 @@ AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
 |---|---|---|
 | ✅ **推荐** | MediaTek MT7921 / MT7922 / RZ616 | 本项目实测(RZ616 / MT7922,VID 0e8d:0616),预编译内核已内置固件 |
 | ✅ **推荐** | Realtek USB 蓝牙 | build_kernel.sh 已 enable `BT_HCIBTUSB_REALTEK`,固件在 firmware/ |
-| ❌ **不兼容** | Intel 内置蓝牙 | 项目已记录"兼容性差";且内置是 PCIe 非 USB,无法 usbipd 直通 |
-| ❌ **不兼容** | 所有内置(非 USB 总线)蓝牙 | 不走 USB 总线,usbipd 直通不可用(架构硬性限制) |
+| ❌ **不兼容** | 所有内置(非 USB 总线)蓝牙(Intel / Realtek / MediaTek 等内置二合一) | 不走 USB 总线,usbipd 直通不可用(架构硬性限制) |
 
 > **注**:joycontrol 官方 issue 里没有具体芯片型号的兼容性清单(多为 BlueZ 版本、树莓派、VMware 等软件问题)。除上表(本项目实测 + 架构限制)外,社区偶有关于 Killer(Intel AX200 芯片)、Broadcom、廉价 CSR 适配器的断连报告,但**未经验证,不列入清单**。
 
 判断方法(第 0 步硬件识别):
 - 设备管理器「蓝牙」看芯片型号
 - `usbipd list` 确认蓝牙是否走 USB 总线(能列出就是 USB)
-- Intel 内置 / 蓝牙不走 USB -> 换 USB 蓝牙适配器(MediaTek 或 Realtek)
+- 内置(非 USB)蓝牙(如 Intel / Realtek 二合一)-> 换 USB 蓝牙适配器(MediaTek 或 Realtek)
 
 ## 原理
 
