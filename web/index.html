@@ -81,6 +81,7 @@ details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
     <button id="m-keyboard" onclick="setMode('keyboard')">键盘</button>
     <button id="m-gamepad" onclick="setMode('gamepad')">手柄</button>
     <button id="m-pro2" onclick="setMode('pro2')">Pro2</button>
+    <button id="gp-detect-btn" onclick="scanGamepads()" style="background:#2a2a3a;display:none">检测手柄</button>
     <span style="flex:1"></span>
     <button id="rec-btn" class="rec-active" onclick="toggleRec()">录制</button>
     <button onclick="playMacro()">回放</button>
@@ -190,12 +191,13 @@ details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
   </div>
   <div class="panel">
     <div class="panel-title">手柄映射 <button onclick="addGpMap()" style="float:right;padding:2px 6px;font-size:10px">添加</button></div>
+    <div id="gp-detect" style="font-size:10px;color:#555;padding:0 0 4px">未检测到手柄(连上后任意模式自动识别)</div>
     <div class="map-table" id="gpmap-table"></div>
   </div>
   <details><summary>JSON 高级</summary>
     <textarea id="mapcfg">{
   "keyboard": {"KeyA":"a","KeyS":"b","KeyZ":"y","KeyX":"x","KeyJ":"left","KeyL":"right","KeyI":"up","KeyK":"down","KeyU":"l","KeyO":"r","KeyQ":"zl","KeyE":"zr","Enter":"plus","Backspace":"minus","Space":"home","KeyC":"capture"},
-  "gamepad": {"0":"b","1":"a","2":"y","3":"x","4":"l","5":"r","6":"zl","7":"zr","8":"minus","9":"plus","10":"l_stick","11":"r_stick","12":"up","13":"down","14":"left","15":"right"}
+  "gamepad": {"0":"b","1":"a","2":"y","3":"x","4":"l","5":"r","6":"zl","7":"zr","8":"minus","9":"plus","10":"l_stick","11":"r_stick","12":"up","13":"down","14":"left","15":"right","16":"home","17":"capture"}
 }</textarea>
     <button onclick="syncMaps()" style="margin-top:4px">从JSON同步</button>
   </details>
@@ -304,6 +306,9 @@ function setMode(m){
     var el=document.getElementById('hint-'+hm);
     if(el)el.style.display=hm===m?'block':'none';
   });
+  // "检测手柄" button is only relevant in gamepad mode
+  var dbtn=document.getElementById('gp-detect-btn');
+  if(dbtn)dbtn.style.display=(m==='gamepad')?'':'none';
 }
 function toggleRec(){recording=!recording;const b=document.getElementById('rec-btn');b.classList.toggle('rec-active',!recording);b.textContent=recording?'停止录':'录制';if(recording){macro=[];recT0=performance.now();}if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'rec',enabled:recording}));}
 function playMacro(){if(recording){showToast('录制中,请先停止录制再回放');return;}if(!macro.length){alert('宏为空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let i=parseFloat(document.getElementById('interval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play',macro:macro,loops:l,interval:i}));}
@@ -340,7 +345,37 @@ document.addEventListener('keydown',e=>{if(mode!=='keyboard')return;if(pendingBi
 document.addEventListener('keyup',e=>{if(mode!=='keyboard')return;delete pressedKeys[e.code];var isStick=false;for(var sk in stickKeyMap){for(var d in stickKeyMap[sk]){if(stickKeyMap[sk][d]===e.code)isStick=true;}}if(isStick){updateStickFromKeys();e.preventDefault();return;}const n=keyMap[e.code];if(n){btn(n,0);e.preventDefault();}});
 window.addEventListener('blur',()=>{pressedKeys={};for(var sk in stickKeyMap){if(stickMouse!==sk)send({type:'stick',stick:sk,h:0,v:0});}});
 let lastL='',lastR='';
-function gpLoop(){if(mode==='gamepad'){const gp=navigator.getGamepads()[0];if(gp){gp.buttons.forEach((b,i)=>{const p=b.pressed;if(pendingBind&&p&&!gpPrev[i]){gpMap[i]=pendingBind;renderGpMap();renderBindings();pendingBind=null;gpPrev[i]=true;}else if(gpMap[i]&&p!==gpPrev[i]){btn(gpMap[i],p?1:0);gpPrev[i]=p;}});if(listeningStick){
+function getXboxGamepad(){
+  // Prefer an Xbox/Series/XInput controller among ALL connected gamepads
+  // (browsers can expose several devices; getGamepads()[0] isn't always the
+  // Xbox pad - e.g. other USB controllers/virtual pads may come first).
+  var pads=navigator.getGamepads?navigator.getGamepads():[];
+  for(var i=0;i<pads.length;i++){
+    var p=pads[i];
+    if(p&&p.connected&&/xbox|series|xinput|controller/i.test(p.id))return p;
+  }
+  for(var j=0;j<pads.length;j++){if(pads[j]&&pads[j].connected)return pads[j];}
+  return null;
+}
+function scanGamepads(){
+  // This click is the user gesture browsers require before getGamepads()
+  // reports button/axis data; also gives the user direct feedback.
+  var pads=navigator.getGamepads?navigator.getGamepads():[];
+  var found=[];for(var i=0;i<pads.length;i++){if(pads[i]&&pads[i].connected)found.push(pads[i]);}
+  var s=document.getElementById('status');
+  if(!found.length){
+    s.textContent='未检测到手柄:请确认手柄已连到电脑(接收器/蓝牙/USB)再点一次';
+    s.className='status err';
+  }else{
+    var ids=found.map(function(p){return (p.id||'gamepad')+'[idx'+p.index+']';}).join(' / ');
+    s.textContent='检测到 '+found.length+' 个:'+ids;
+    s.className='status ok';
+    if(!getXboxGamepad()){s.textContent+=' (未匹配 Xbox 识别名,可选手柄模式在映射面板手动绑定)';s.className='status wait';}
+  }
+  pollGamepads();
+  return found;
+}
+function gpLoop(){if(mode==='gamepad'){const gp=getXboxGamepad();if(gp){gp.buttons.forEach((b,i)=>{const p=b.pressed;if(pendingBind&&p&&!gpPrev[i]){gpMap[i]=pendingBind;renderGpMap();renderBindings();pendingBind=null;gpPrev[i]=true;}else if(gpMap[i]&&p!==gpPrev[i]){btn(gpMap[i],p?1:0);gpPrev[i]=p;}});if(listeningStick){
       var active=[];
       for(var ai=0;ai<gp.axes.length;ai++){
         if(Math.abs(gp.axes[ai])>0.5)active.push(ai);
@@ -353,6 +388,22 @@ function gpLoop(){if(mode==='gamepad'){const gp=navigator.getGamepads()[0];if(gp
     }
     var lx=gp.axes[stickAxes.left.x]||0,ly=gp.axes[stickAxes.left.y]||0,rx=gp.axes[stickAxes.right.x]||0,ry=gp.axes[stickAxes.right.y]||0;const lh=Math.abs(lx)>0.1?lx:0,lv=Math.abs(ly)>0.1?ly:0,rh=Math.abs(rx)>0.1?rx:0,rv=Math.abs(ry)>0.1?ry:0;const ls=lh.toFixed(2)+','+lv.toFixed(2),rs=rh.toFixed(2)+','+rv.toFixed(2);if(ls!==lastL){send({type:'stick',stick:'left',h:lh,v:-lv});lastL=ls;}if(rs!==lastR){send({type:'stick',stick:'right',h:rh,v:-rv});lastR=rs;}}}}
 setInterval(gpLoop,15);
+function pollGamepads(){
+  // Lightweight always-on poll: browsers only expose a connected gamepad to
+  // getGamepads() after the page polls it following a user gesture, so gpLoop
+  // (gamepad mode only) isn't enough - detect in ANY mode.
+  var el=document.getElementById('gp-detect');
+  if(!el)return;
+  var g=getXboxGamepad();
+  if(g){el.textContent='已识别手柄: '+g.id+'  [idx'+g.index+']';el.style.color='#0a6';}
+  else{
+    var pads=navigator.getGamepads?navigator.getGamepads():[],n=0;
+    for(var i=0;i<pads.length;i++){if(pads[i]&&pads[i].connected)n++;}
+    el.textContent=n?'检测到 '+n+' 个手柄但识别名未匹配 Xbox(可选手柄模式手动绑定):'+pads.filter(function(p){return p&&p.connected;}).map(function(p){return p.id;}).join(' / '):'未检测到手柄(连上后任意模式自动识别)';
+    el.style.color=n?'#a72':'#555';
+  }
+}
+setInterval(pollGamepads,1000);
 function setupStick(el,knob,stick){let drag=false;const h=(cx,cy)=>{const r=el.getBoundingClientRect();let x=(cx-r.left-r.width/2)/(r.width/2);let y=(cy-r.top-r.height/2)/(r.height/2);const m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m;}knob.style.left=(35+x*26)+'px';knob.style.top=(35+y*26)+'px';send({type:'stick',stick:stick,h:x,v:-y});};const reset=()=>{knob.style.left='35px';knob.style.top='35px';send({type:'stick',stick:stick,h:0,v:0});};el.addEventListener('mousedown',e=>{drag=true;h(e.clientX,e.clientY);});document.addEventListener('mousemove',e=>{if(drag)h(e.clientX,e.clientY);});document.addEventListener('mouseup',()=>{if(drag){drag=false;reset();}});el.addEventListener('touchstart',e=>{drag=true;h(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();});el.addEventListener('touchmove',e=>{if(drag)h(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();});el.addEventListener('touchend',()=>{drag=false;reset();});}
 setupStick(document.getElementById('lstick'),document.getElementById('lknob'),'left');
 setupStick(document.getElementById('rstick'),document.getElementById('rknob'),'right');
