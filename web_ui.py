@@ -153,22 +153,38 @@ class web_ui:
                 try:
                     ev = json.loads(msg.data)
                     if ev.get('type') == 'play':
-                        self._playing = False
-                        self._play_gen += 1
-                        gen = self._play_gen
-                        asyncio.create_task(self._play(ev.get('macro', []), ev.get('loops', 1), ev.get('interval', 0), gen))
+                        if self._recording:
+                            # don't pollute a recording with playback events
+                            logger.info('play ignored: recording in progress')
+                        else:
+                            self._playing = False
+                            self._play_gen += 1
+                            gen = self._play_gen
+                            asyncio.create_task(self._play(ev.get('macro', []), ev.get('loops', 1), ev.get('interval', 0), gen))
                     elif ev.get('type') == 'play_list':
-                        self._playing = False
-                        self._play_gen += 1
-                        gen = self._play_gen
-                        asyncio.create_task(self._play_list(
-                            ev.get('macros', []), ev.get('loops', 1),
-                            ev.get('macroInterval', 0), ev.get('loopInterval', 0),
-                            ev.get('extraMacros'), ev.get('extraEveryLoops', 0),
-                            ev.get('extraAfterSec', 0), ev.get('extraMacroInterval', 0), gen))
+                        if self._recording:
+                            # don't pollute a recording with playback events
+                            logger.info('play_list ignored: recording in progress')
+                        else:
+                            self._playing = False
+                            self._play_gen += 1
+                            gen = self._play_gen
+                            asyncio.create_task(self._play_list(
+                                ev.get('macros', []), ev.get('loops', 1),
+                                ev.get('macroInterval', 0), ev.get('loopInterval', 0),
+                                ev.get('extraMacros'), ev.get('extraEveryLoops', 0),
+                                ev.get('extraAfterSec', 0), ev.get('extraMacroInterval', 0), gen))
                     elif ev.get('type') == 'stop':
                         self._playing = False
                         self._play_gen += 1  # invalidate any in-flight task too
+                        # Reset the controller to neutral (stop = release all
+                        # buttons + center sticks) so a mid-macro stop doesn't
+                        # leave a button held. No sleep needed: any playing task
+                        # checks gen/playing before its next event and its
+                        # in-flight send lands before this release (FIFO), so
+                        # the release is always the last write and new presses
+                        # right after stop are NOT swallowed.
+                        await self._release_all()
                         logger.info('stop received')
                     elif ev.get('type') == 'reconnect':
                         asyncio.create_task(self._force_reconnect())
@@ -266,6 +282,7 @@ class web_ui:
             await self._release_all()
             t0 = macro[0]['t'] / 1000.0
             start = time.time()
+            last_stick_t = {'left': -1000, 'right': -1000}
             for i, e in enumerate(macro):
                 if not self._active(gen):
                     break
@@ -277,6 +294,13 @@ class web_ui:
                         break
                 if not self._active(gen):
                     break
+                if e['ev'].get('type') == 'stick':
+                    # NS samples at 60Hz (~16ms): drop stick events denser than
+                    # that on playback too, so the Switch sees the same cadence
+                    # it sampled while recording (fast flicks no longer drop).
+                    if e['t'] - last_stick_t[e['ev']['stick']] < 16:
+                        continue
+                    last_stick_t[e['ev']['stick']] = e['t']
                 await self._apply(e['ev'])
             if self._active(gen) and interval > 0 and (loops == 0 or loop_count < loops):
                 await self._interruptible_sleep(interval, gen)
@@ -556,9 +580,15 @@ class web_ui:
         self._transport = transport
         self.controller_state = protocol.get_controller_state()
         try:
-            await self.controller_state.connect()
+            # connect() waits on sig_set_player_lights, which the Switch only
+            # sends when the pairing handshake completes. If the connection is
+            # reset mid-handshake (e.g. it dropped during a previous session),
+            # that event never fires and connect() would hang forever, holding
+            # _reconnect_lock and freezing the conn_manager. Timeout it so the
+            # caller closes the transport and retries.
+            await asyncio.wait_for(self.controller_state.connect(), timeout=15)
         except Exception:
-            # connect() failed - don't leave a half-baked controller_state
+            # connect() failed/timeout - don't leave a half-baked controller_state
             try:
                 await transport.close()
             except Exception:
@@ -579,6 +609,7 @@ class web_ui:
             await self._release_all()
             t0 = macro[0]['t'] / 1000.0
             start = time.time()
+            last_stick_t = {'left': -1000, 'right': -1000}
             for i, e in enumerate(macro):
                 if not self._active(gen):
                     break
@@ -590,6 +621,12 @@ class web_ui:
                         break
                 if not self._active(gen):
                     break
+                if e['ev'].get('type') == 'stick':
+                    # NS samples at 60Hz (~16ms): drop stick events denser than
+                    # that on playback too (see _play).
+                    if e['t'] - last_stick_t[e['ev']['stick']] < 16:
+                        continue
+                    last_stick_t[e['ev']['stick']] = e['t']
                 await self._apply(e['ev'])
             if self._active(gen) and macroInterval > 0 and idx < len(macros) - 1:
                 await self._interruptible_sleep(macroInterval, gen)

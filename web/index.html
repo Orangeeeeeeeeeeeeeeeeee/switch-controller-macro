@@ -63,10 +63,12 @@ input[type=number]{width:48px;padding:4px;background:#1a1a1a;border:1px solid #4
 textarea{width:100%;height:80px;background:#1a1a1a;border:1px solid #444;border-radius:3px;color:#999;font-family:monospace;font-size:10px;padding:6px;resize:vertical}
 details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
 @media(max-width:640px){.cols{flex-direction:column}.col-narrow{flex:1}}
+#toast{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);background:#3a1a1a;color:#f55;border:1px solid #a22;padding:10px 16px;border-radius:4px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;font-size:13px}
 </style>
 </head>
 <body>
 <div class="wrap">
+<div id="toast"></div>
 <div class="header">
   <h1>Switch 手柄控制</h1>
   <span class="status wait" id="status">连接中</span>
@@ -250,7 +252,21 @@ const SWITCH_BTNS=['a','b','x','y','l','r','zl','zr','plus','minus','home','capt
 
 function connect(){const h=location.hostname||'127.0.0.1';ws=new WebSocket('ws://'+h+':8080/ws');ws.onopen=()=>{send({type:'pro2',enabled:mode==='pro2'});send({type:'get_status'});};ws.onmessage=(e)=>{var d;try{d=JSON.parse(e.data);}catch(err){return;}if(d.type==='status'){var s=document.getElementById('status');s.textContent=d.msg||d.state;s.className='status '+(d.state==='connected'?'ok':d.state==='disconnected'?'err':'wait');}else if(d.type==='record'&&recording){macro.push({t:performance.now()-recT0,ev:d.ev});document.getElementById('rec-count').textContent=macro.length+' 事件';}};ws.onclose=()=>{const s=document.getElementById('status');s.textContent='断开,重连';s.className='status err';setTimeout(connect,2000);};ws.onerror=()=>{};}
 connect();
-function send(ev){if(ws&&ws.readyState===1)ws.send(JSON.stringify(ev));if(recording)macro.push({t:performance.now()-recT0,ev:ev});document.getElementById('rec-count').textContent=macro.length+' 事件';}
+let lastRecStickT={left:0,right:0};
+function recPush(ev){
+  if(ev.type==='stick'){
+    var now=performance.now();
+    // NS samples input at 60Hz (~16ms): throttle stick recording to the same
+    // cadence so the macro doesn't carry denser stick events than the Switch
+    // can actually receive (intermediate stick positions were being swallowed).
+    if(now-lastRecStickT[ev.stick]<16)return;
+    lastRecStickT[ev.stick]=now;
+  }
+  macro.push({t:performance.now()-recT0,ev:ev});
+  document.getElementById('rec-count').textContent=macro.length+' 事件';
+}
+function send(ev){if(ws&&ws.readyState===1)ws.send(JSON.stringify(ev));if(recording)recPush(ev);}
+function showToast(msg){var t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.style.opacity='1';clearTimeout(showToast._t);showToast._t=setTimeout(function(){t.style.opacity='0';},2500);}
 function btn(n,p){send({type:'button',name:n,pressed:!!p});}
 let pendingBind=null;
 function selectSwitchBtn(b){pendingBind=b;renderBindings();}
@@ -290,8 +306,8 @@ function setMode(m){
   });
 }
 function toggleRec(){recording=!recording;const b=document.getElementById('rec-btn');b.classList.toggle('rec-active',!recording);b.textContent=recording?'停止录':'录制';if(recording){macro=[];recT0=performance.now();}if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'rec',enabled:recording}));}
-function playMacro(){if(!macro.length){alert('宏为空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let i=parseFloat(document.getElementById('interval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play',macro:macro,loops:l,interval:i}));}
-function playList(){if(!macroList.length){alert('列表空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let mi=parseFloat(document.getElementById('macroInterval').value)||0;let li=parseFloat(document.getElementById('loopInterval').value)||0;let eel=parseInt(document.getElementById('extraEveryLoops').value)||0;let eam=parseFloat(document.getElementById('extraAfterMin').value)||0;let emi=parseFloat(document.getElementById('extraMacroInterval').value)||0;let payload={type:'play_list',macros:macroList,loops:l,macroInterval:mi,loopInterval:li};if(extraList.length&&(eel>0||eam>0)){payload.extraMacros=extraList;payload.extraEveryLoops=eel;payload.extraAfterSec=eam*60;payload.extraMacroInterval=emi;}if(ws&&ws.readyState===1)ws.send(JSON.stringify(payload));}
+function playMacro(){if(recording){showToast('录制中,请先停止录制再回放');return;}if(!macro.length){alert('宏为空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let i=parseFloat(document.getElementById('interval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play',macro:macro,loops:l,interval:i}));}
+function playList(){if(recording){showToast('录制中,请先停止录制再回放');return;}if(!macroList.length){alert('列表空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let mi=parseFloat(document.getElementById('macroInterval').value)||0;let li=parseFloat(document.getElementById('loopInterval').value)||0;let eel=parseInt(document.getElementById('extraEveryLoops').value)||0;let eam=parseFloat(document.getElementById('extraAfterMin').value)||0;let emi=parseFloat(document.getElementById('extraMacroInterval').value)||0;let payload={type:'play_list',macros:macroList,loops:l,macroInterval:mi,loopInterval:li};if(extraList.length&&(eel>0||eam>0)){payload.extraMacros=extraList;payload.extraEveryLoops=eel;payload.extraAfterSec=eam*60;payload.extraMacroInterval=emi;}if(ws&&ws.readyState===1)ws.send(JSON.stringify(payload));}
 function stopAll(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'stop'}));if(recording)toggleRec();}
 function connectSwitch(){
   send({type:'connect',mac:''});

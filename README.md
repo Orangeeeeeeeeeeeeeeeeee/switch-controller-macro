@@ -252,6 +252,13 @@ Class = 0x002508
 
 ## 更新日志
 
+### 2026-08-13
+- **录制/播放 60Hz 对齐**:摇杆录制与播放都按 16ms 节流,和 Switch 60Hz 采样对齐,快速摇杆动作不再因采样丢位置被吞
+- **宏回放连接卡死修复**:`controller_state.connect()` 加 15s 超时(Switch 握手中途断开时不再永久卡死 conn_manager,自动重试)
+- **停止复位**:点「停止」释放全部按键 + 摇杆回中,宏停到一半不再卡住按键
+- **录制禁回放**:录制中点回放被禁止(前端 toast 提示 + 后端忽略);改用非模态 toast,避免弹窗确定键的点击穿透被录进宏
+- **宏重放竞态修复**:代计数器 `_play_gen`,重放/停止时旧任务即退、不误停新任务、停止不丢(上一提交遗漏,补记)
+
 ### 2026-08-12
 - **文档:蓝牙设备类 0x002508 兜底**:Switch 12.0+ 要求蓝牙类 0x002508,项目 joycontrol 已在 SDP 注册后 set_class;个别适配器不生效时 `/etc/bluetooth/main.conf` 设 `Class = 0x002508` 兜底([joycontrol#20](https://github.com/mart1nro/joycontrol/issues/20))
 - **新增 Intel AX201 预编译内核**:`kernel/Ax201 网卡内核`(AX201 蓝牙走 USB 总线,可 usbipd 直通,固件已内置);MT7922 预编译内核重命名为 `kernel/MT7922 网卡内核`。部署按蓝牙芯片复制对应内核为 `kernel/bzImage3`(MT7922/AX201 均有预编译,其他芯片自编译)
