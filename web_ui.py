@@ -22,6 +22,7 @@ class web_ui:
         # background _conn_manager establishes it.
         self.controller_state = controller_state
         self._playing = False
+        self._play_gen = 0  # bumped on each play/play_list; stale tasks bail by gen
         self._pro2_enabled = False
         self._recording = False
         self._reconnect_lock = asyncio.Lock()
@@ -153,14 +154,21 @@ class web_ui:
                     ev = json.loads(msg.data)
                     if ev.get('type') == 'play':
                         self._playing = False
-                        await asyncio.sleep(0)
-                        asyncio.create_task(self._play(ev.get('macro', []), ev.get('loops', 1), ev.get('interval', 0)))
+                        self._play_gen += 1
+                        gen = self._play_gen
+                        asyncio.create_task(self._play(ev.get('macro', []), ev.get('loops', 1), ev.get('interval', 0), gen))
                     elif ev.get('type') == 'play_list':
                         self._playing = False
-                        await asyncio.sleep(0)
-                        asyncio.create_task(self._play_list(ev.get('macros', []), ev.get('loops', 1), ev.get('macroInterval', 0), ev.get('loopInterval', 0)))
+                        self._play_gen += 1
+                        gen = self._play_gen
+                        asyncio.create_task(self._play_list(
+                            ev.get('macros', []), ev.get('loops', 1),
+                            ev.get('macroInterval', 0), ev.get('loopInterval', 0),
+                            ev.get('extraMacros'), ev.get('extraEveryLoops', 0),
+                            ev.get('extraAfterSec', 0), ev.get('extraMacroInterval', 0), gen))
                     elif ev.get('type') == 'stop':
                         self._playing = False
+                        self._play_gen += 1  # invalidate any in-flight task too
                         logger.info('stop received')
                     elif ev.get('type') == 'reconnect':
                         asyncio.create_task(self._force_reconnect())
@@ -214,13 +222,20 @@ class web_ui:
             except Exception:
                 pass
 
-    async def _interruptible_sleep(self, seconds):
+    def _active(self, gen):
+        # True only if playback is still on AND this task is the current one.
+        # A new play/play_list bumps _play_gen, so a superseded task (older gen)
+        # sees False and bails - this prevents a replayed macro from running
+        # concurrently with the previous one. gen=None skips the gen check.
+        return self._playing and (gen is None or self._play_gen == gen)
+
+    async def _interruptible_sleep(self, seconds, gen=None):
         # Sleep in small chunks so 'stop' interrupts long macro gaps promptly.
         # A single long asyncio.sleep() is not interruptible - stop would wait
         # for the whole gap (macros can have 10s+ pauses) before taking effect.
         # Uses real elapsed time (not a counter) so intervals are accurate.
         end = time.time() + seconds
-        while self._playing and time.time() < end:
+        while self._active(gen) and time.time() < end:
             await asyncio.sleep(min(0.05, max(0, end - time.time())))
 
     async def _release_all(self):
@@ -239,33 +254,36 @@ class web_ui:
         except Exception as e:
             logger.warning(f'release_all error: {e}')
 
-    async def _play(self, macro, loops=1, interval=0):
+    async def _play(self, macro, loops=1, interval=0, gen=None):
         if not macro:
             logger.info('play: empty macro')
             return
         logger.info(f'playing {len(macro)} events, loops={loops}, interval={interval}s')
         self._playing = True
         loop_count = 0
-        while self._playing and (loops == 0 or loop_count < loops):
+        while self._active(gen) and (loops == 0 or loop_count < loops):
             loop_count += 1
             await self._release_all()
             t0 = macro[0]['t'] / 1000.0
             start = time.time()
             for i, e in enumerate(macro):
-                if not self._playing:
+                if not self._active(gen):
                     break
                 target = e['t'] / 1000.0 - t0
                 now = time.time() - start
                 if target > now:
-                    await self._interruptible_sleep(target - now)
-                    if not self._playing:
+                    await self._interruptible_sleep(target - now, gen)
+                    if not self._active(gen):
                         break
-                if not self._playing:
+                if not self._active(gen):
                     break
                 await self._apply(e['ev'])
-            if self._playing and interval > 0 and (loops == 0 or loop_count < loops):
-                await self._interruptible_sleep(interval)
-        self._playing = False
+            if self._active(gen) and interval > 0 and (loops == 0 or loop_count < loops):
+                await self._interruptible_sleep(interval, gen)
+        # Only clear _playing if we're still the current task - a superseded
+        # task must not clobber the flag the newer task now owns.
+        if gen is None or self._play_gen == gen:
+            self._playing = False
         logger.info('play done')
 
     def _ns_reader_thread(self):
@@ -551,36 +569,67 @@ class web_ui:
         self._auto_reconnect = True
         logger.info('reconnected to Switch')
 
-    async def _play_list(self, macros, loops=1, macroInterval=0, loopInterval=0):
+    async def _play_list_once(self, macros, macroInterval, gen=None):
+        # Play one pass through a macro list (all macros, in order). Shared by
+        # the main list loop and the extra (inserted) macro list. Checks
+        # _active(gen) throughout so 'stop' or a superseding play interrupts.
+        for idx, macro in enumerate(macros):
+            if not self._active(gen) or not macro:
+                break
+            await self._release_all()
+            t0 = macro[0]['t'] / 1000.0
+            start = time.time()
+            for i, e in enumerate(macro):
+                if not self._active(gen):
+                    break
+                target = e['t'] / 1000.0 - t0
+                now = time.time() - start
+                if target > now:
+                    await self._interruptible_sleep(target - now, gen)
+                    if not self._active(gen):
+                        break
+                if not self._active(gen):
+                    break
+                await self._apply(e['ev'])
+            if self._active(gen) and macroInterval > 0 and idx < len(macros) - 1:
+                await self._interruptible_sleep(macroInterval, gen)
+
+    async def _play_list(self, macros, loops=1, macroInterval=0, loopInterval=0,
+                         extraMacros=None, extraEveryLoops=0, extraAfterSec=0,
+                         extraMacroInterval=0, gen=None):
         if not macros:
             return
         self._playing = True
         loop_count = 0
-        while self._playing and (loops == 0 or loop_count < loops):
+        # Extra-list trigger state: count main iterations since the last extra
+        # run, and track the time baseline. Either condition (count OR elapsed
+        # time) fires the extra list at the end of a completed main iteration;
+        # both reset after the extra runs, so it repeats periodically.
+        extra_since = 0
+        extra_t0 = time.time()
+        while self._active(gen) and (loops == 0 or loop_count < loops):
             loop_count += 1
-            for idx, macro in enumerate(macros):
-                if not self._playing or not macro:
-                    break
-                await self._release_all()
-                t0 = macro[0]['t'] / 1000.0
-                start = time.time()
-                for i, e in enumerate(macro):
-                    if not self._playing:
-                        break
-                    target = e['t'] / 1000.0 - t0
-                    now = time.time() - start
-                    if target > now:
-                        await self._interruptible_sleep(target - now)
-                        if not self._playing:
-                            break
-                    if not self._playing:
-                        break
-                    await self._apply(e['ev'])
-                if self._playing and macroInterval > 0 and idx < len(macros) - 1:
-                    await self._interruptible_sleep(macroInterval)
-            if self._playing and loopInterval > 0 and (loops == 0 or loop_count < loops):
-                await self._interruptible_sleep(loopInterval)
-        self._playing = False
+            extra_since += 1
+            await self._play_list_once(macros, macroInterval, gen)
+            # After a full main-list pass, maybe insert the extra list - runs
+            # right at the end of "that round", before the loopInterval pause.
+            if self._active(gen) and extraMacros:
+                fire = False
+                if extraEveryLoops > 0 and extra_since >= extraEveryLoops:
+                    fire = True
+                if extraAfterSec > 0 and (time.time() - extra_t0) >= extraAfterSec:
+                    fire = True
+                if fire:
+                    logger.info(f'extra macro list inserted after loop {loop_count}')
+                    await self._play_list_once(extraMacros, extraMacroInterval, gen)
+                    extra_since = 0
+                    extra_t0 = time.time()
+            if self._active(gen) and loopInterval > 0 and (loops == 0 or loop_count < loops):
+                await self._interruptible_sleep(loopInterval, gen)
+        # Only clear _playing if we're still the current task - a superseded
+        # task must not clobber the flag the newer task now owns.
+        if gen is None or self._play_gen == gen:
+            self._playing = False
         logger.info('play list stopped/done')
 
     async def _apply(self, ev):

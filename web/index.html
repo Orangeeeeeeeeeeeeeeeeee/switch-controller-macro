@@ -168,6 +168,21 @@ details summary{cursor:pointer;color:#777;font-size:11px;padding:4px 0}
     </div>
   </div>
   <div class="panel">
+    <div class="panel-title">额外宏列表 <span id="extra-count" style="color:#666">列表0</span></div>
+    <div class="row" style="color:#777;font-size:10px">主列表循环 N 次或 T 时间后,在该轮结束时插入运行一次(周期重复)</div>
+    <div class="row">
+      <label>触发次数</label><input id="extraEveryLoops" type="number" value="0" min="0" oninput="updateExtraHint()">
+      <label>触发时间</label><input id="extraAfterMin" type="number" value="0" min="0" step="0.5" oninput="updateExtraHint()">分
+      <label>宏间隔</label><input id="extraMacroInterval" type="number" value="0" min="0">s
+    </div>
+    <div id="extra-hint" style="font-size:10px;color:#a72;padding:0 2px 4px"></div>
+    <div class="map-table" id="extra-list"></div>
+    <div class="row" style="margin-top:6px">
+      <button onclick="addToExtra()">加入列表</button>
+      <button onclick="clearExtra()">清空列表</button>
+    </div>
+  </div>
+  <div class="panel">
     <div class="panel-title">键盘映射 <button onclick="addKeyMap()" style="float:right;padding:2px 6px;font-size:10px">添加</button></div>
     <div class="map-table" id="keymap-table"></div>
   </div>
@@ -276,7 +291,7 @@ function setMode(m){
 }
 function toggleRec(){recording=!recording;const b=document.getElementById('rec-btn');b.classList.toggle('rec-active',!recording);b.textContent=recording?'停止录':'录制';if(recording){macro=[];recT0=performance.now();}if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'rec',enabled:recording}));}
 function playMacro(){if(!macro.length){alert('宏为空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let i=parseFloat(document.getElementById('interval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play',macro:macro,loops:l,interval:i}));}
-function playList(){if(!macroList.length){alert('列表空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let mi=parseFloat(document.getElementById('macroInterval').value)||0;let li=parseFloat(document.getElementById('loopInterval').value)||0;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'play_list',macros:macroList,loops:l,macroInterval:mi,loopInterval:li}));}
+function playList(){if(!macroList.length){alert('列表空');return;}let l=parseInt(document.getElementById('loops').value);if(isNaN(l))l=1;let mi=parseFloat(document.getElementById('macroInterval').value)||0;let li=parseFloat(document.getElementById('loopInterval').value)||0;let eel=parseInt(document.getElementById('extraEveryLoops').value)||0;let eam=parseFloat(document.getElementById('extraAfterMin').value)||0;let emi=parseFloat(document.getElementById('extraMacroInterval').value)||0;let payload={type:'play_list',macros:macroList,loops:l,macroInterval:mi,loopInterval:li};if(extraList.length&&(eel>0||eam>0)){payload.extraMacros=extraList;payload.extraEveryLoops=eel;payload.extraAfterSec=eam*60;payload.extraMacroInterval=emi;}if(ws&&ws.readyState===1)ws.send(JSON.stringify(payload));}
 function stopAll(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'stop'}));if(recording)toggleRec();}
 function connectSwitch(){
   send({type:'connect',mac:''});
@@ -291,6 +306,12 @@ function renderList(){document.getElementById('list-count').textContent='列表'
 function addToList(){if(macro.length){macroList.push(macro.slice());renderList();}}
 function clearList(){macroList=[];renderList();}
 function removeFromList(i){macroList.splice(i,1);renderList();}
+let extraList=[];
+function renderExtra(){document.getElementById('extra-count').textContent='列表'+extraList.length;document.getElementById('extra-list').innerHTML=extraList.map((m,i)=>'<div class="macro-item"><span>宏'+(i+1)+': '+m.length+'事件</span><button onclick="removeFromExtra('+i+')">删</button></div>').join('')||'<div style="color:#555;padding:6px">空</div>';updateExtraHint();}
+function updateExtraHint(){var h=document.getElementById('extra-hint');if(!h)return;var eel=parseInt(document.getElementById('extraEveryLoops').value)||0;var eam=parseFloat(document.getElementById('extraAfterMin').value)||0;if(extraList.length&&!(eel>0||eam>0)){h.textContent='⚠ 未设触发次数/时间,额外列表不会运行';}else{h.textContent='';}}
+function addToExtra(){if(macro.length){extraList.push(macro.slice());renderExtra();}}
+function clearExtra(){extraList=[];renderExtra();}
+function removeFromExtra(i){extraList.splice(i,1);renderExtra();}
 function btnOpts(s){return SWITCH_BTNS.map(b=>'<option value="'+b+'" '+(b===s?'selected':'')+'>'+b+'</option>').join('');}
 function renderKeyMap(){document.getElementById('keymap-table').innerHTML=Object.entries(keyMap).map(([k,v])=>'<div class="map-item"><span>'+k+'</span><select onchange="keyMap[\''+k+'\']=this.value">'+btnOpts(v)+'</select><button onclick="delete keyMap[\''+k+'\'];renderKeyMap()">删</button></div>').join('')||'<div style="color:#555;padding:6px">空</div>';}
 function renderGpMap(){document.getElementById('gpmap-table').innerHTML=Object.entries(gpMap).map(([k,v])=>'<div class="map-item"><span style="min-width:30px">'+k+'</span><select onchange="gpMap[\''+k+'\']=this.value">'+btnOpts(v)+'</select><button onclick="delete gpMap[\''+k+'\'];renderGpMap()">删</button></div>').join('')||'<div style="color:#555;padding:6px">空</div>';}
@@ -298,7 +319,7 @@ function addKeyMap(){const k=prompt('键盘code(如KeyA)');if(k){keyMap[k]='a';r
 function addGpMap(){const k=prompt('手柄索引(0-15)');if(k!==null){gpMap[k]='a';renderGpMap();}}
 function syncMaps(){try{const c=JSON.parse(document.getElementById('mapcfg').value);keyMap=c.keyboard||{};gpMap=c.gamepad||{};renderKeyMap();renderGpMap();renderBindings();renderStickBinds();}catch(e){alert('JSON错误');}}
 try{const c=JSON.parse(document.getElementById('mapcfg').value);keyMap=c.keyboard||{};gpMap=c.gamepad||{};}catch(e){}
-renderList();renderKeyMap();renderGpMap();
+renderList();renderKeyMap();renderGpMap();renderExtra();
 document.addEventListener('keydown',e=>{if(mode!=='keyboard')return;if(pendingBind){keyMap[e.code]=pendingBind;renderBindings();renderKeyMap();pendingBind=null;renderBindings();e.preventDefault();return;}pressedKeys[e.code]=true;var isStick=false;for(var sk in stickKeyMap){for(var d in stickKeyMap[sk]){if(stickKeyMap[sk][d]===e.code)isStick=true;}}if(isStick){updateStickFromKeys();e.preventDefault();return;}const n=keyMap[e.code];if(n){btn(n,1);e.preventDefault();}});
 document.addEventListener('keyup',e=>{if(mode!=='keyboard')return;delete pressedKeys[e.code];var isStick=false;for(var sk in stickKeyMap){for(var d in stickKeyMap[sk]){if(stickKeyMap[sk][d]===e.code)isStick=true;}}if(isStick){updateStickFromKeys();e.preventDefault();return;}const n=keyMap[e.code];if(n){btn(n,0);e.preventDefault();}});
 window.addEventListener('blur',()=>{pressedKeys={};for(var sk in stickKeyMap){if(stickMouse!==sk)send({type:'stick',stick:sk,h:0,v:0});}});
