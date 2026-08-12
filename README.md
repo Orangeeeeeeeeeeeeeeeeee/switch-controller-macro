@@ -27,7 +27,7 @@
 8. 浏览器访问 http://<WSL IP>:8080 测试(虚拟/键盘/手柄/Pro2 模式 + 绑定/换绑/鼠标摇杆 + 录制/回放/宏列表)
 
 硬件:USB 蓝牙适配器(推荐 MediaTek/Realtek;内置非 USB 蓝牙无法 usbipd 直通)。Xbox 手柄可选。Switch 2 Pro 手柄(Pro2 模式,USB 线)可选。
-遇到问题排查:蓝牙 detach、Switch 断开(Connection reset)、固件加载 -2(CONFIG_EXTRA_FIRMWARE built-in)、Python 3.14 get_event_loop(patch utils.py/loader.py)、端口 8080 占用(pkill web_ui.py)、Pro2 无输入(procon2 是否在跑、uinput 是否加载、手柄是否 usbipd 直通)。
+遇到问题排查:蓝牙 detach、Switch 断开(Connection reset)、固件加载 -2(CONFIG_EXTRA_FIRMWARE built-in)、Switch 12.0+ 连不上(蓝牙设备类 0x002508,/etc/bluetooth/main.conf 兜底)、Python 3.14 get_event_loop(patch utils.py/loader.py)、端口 8080 占用(pkill web_ui.py)、Pro2 无输入(procon2 是否在跑、uinput 是否加载、手柄是否 usbipd 直通)。
 ```
 
 AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
@@ -240,10 +240,20 @@ MediaTek 蓝牙需固件 `BT_RAM_CODE_MT7922_1_1_hdr.bin`。装 `linux-firmware`
 - 回放时间戳毫秒/1000 转秒
 - L2CAP 阻塞 connect 冻结事件循环 -> 线程池 + settimeout
 - Switch 断开后持连接槽约 8 秒(重连报 Connection refused)-> 断开/重连已自动重置蓝牙(hci0 reset)释放
+- 蓝牙设备类须为 `0x002508`(Switch 12.0+ 要求)-> 项目 joycontrol 已在 SDP 注册后 set_class;若仍连不上,`/etc/bluetooth/main.conf` 设 `Class = 0x002508` 兜底(见下文,[joycontrol#20](https://github.com/mart1nro/joycontrol/issues/20))
+
+### 蓝牙设备类 0x002508(Switch 12.0+ 连不上)
+Switch 12.0+ 要求蓝牙设备类为 `0x002508`(Gamepad/joystick),否则连不上或即断。joycontrol 会自动设置,但注册 SDP 记录后可能被重置([joycontrol issue #20](https://github.com/mart1nro/joycontrol/issues/20))。本项目 joycontrol 已按 #20 修法把 `set_class()` 放到 `register_sdp_record()` 之后(`joycontrol/joycontrol/server.py`),一般无需手动处理。个别适配器上仍不生效时,持久化兜底:
+```bash
+# /etc/bluetooth/main.conf 加一行
+Class = 0x002508
+```
+改完 `sudo systemctl restart bluetooth`。或临时:`sudo hciconfig hci0 class 0x002508`(每次运行 joycontrol 前执行,joycontrol 启动会重置)。
 
 ## 更新日志
 
 ### 2026-08-12
+- **文档:蓝牙设备类 0x002508 兜底**:Switch 12.0+ 要求蓝牙类 0x002508,项目 joycontrol 已在 SDP 注册后 set_class;个别适配器不生效时 `/etc/bluetooth/main.conf` 设 `Class = 0x002508` 兜底([joycontrol#20](https://github.com/mart1nro/joycontrol/issues/20))
 - **新增 Intel AX201 预编译内核**:`kernel/Ax201 网卡内核`(AX201 蓝牙走 USB 总线,可 usbipd 直通,固件已内置);MT7922 预编译内核重命名为 `kernel/MT7922 网卡内核`。部署按蓝牙芯片复制对应内核为 `kernel/bzImage3`(MT7922/AX201 均有预编译,其他芯片自编译)
 - **额外宏列表**:主列表循环 N 次或 T 时间后,在该轮结束插入运行一次额外宏列表(周期重复);前端实时提示未设触发条件
 - **宏重放竞态修复**:代计数器 `_play_gen`,重放/停止时旧任务即退、不误停新任务、停止不丢
