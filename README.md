@@ -13,10 +13,11 @@
 ```
 我要部署一个「用 PC 模拟 Nintendo Switch 手柄 + 宏录制 Web UI」项目。项目在当前目录,包含全部源码和编译好的内核。请先读 README.md 了解完整方案,然后:
 0. 先识别硬件:查蓝牙适配器(设备管理器「蓝牙」或 usbipd list)确认芯片型号和是否走 USB 总线;查是否有 Xbox 无线手柄。根据蓝牙芯片选内核(复制对应预编译内核为 `kernel/bzImage3`):
+   - MediaTek MT7921 -> 复制 `kernel/MT7921 网卡内核` 为 `kernel/bzImage3`
    - MediaTek MT7922/RZ616 -> 复制 `kernel/MT7922 网卡内核` 为 `kernel/bzImage3`
    - Intel AX201 -> 复制 `kernel/Ax201 网卡内核` 为 `kernel/bzImage3`
    - 以上都不匹配 -> 按 build_kernel.sh 自编译(蓝牙固件在 firmware/),产物命名为 `kernel/bzImage3`
-   - 蓝牙不走 USB 总线(内置 PCIe/ACPI 等)-> usbipd 直通不可用,需走 USB 总线的蓝牙适配器(AX201/MT7922 等 USB 蓝牙均可)
+   - 蓝牙不走 USB 总线(内置 PCIe/ACPI 等)-> usbipd 直通不可用,需走 USB 总线的蓝牙适配器(MT7921/MT7922/AX201 等 USB 蓝牙均可)
 1. 检查/安装 WSL2 + Ubuntu(未装则 wsl --install -d Ubuntu,并开启 systemd)
 2. 配置内核:把第 0 步生成/选定的 `kernel/bzImage3` 放 C:\Users\<用户名>\wslkernel\,按 README 配 .wslconfig(kernel + vmIdleTimeout=-1),wsl --shutdown 重启
 3. 装 usbipd-win(项目里 msi 或 winget install usbipd.win),直通蓝牙适配器(usbipd list 查 busid,bind --force + attach --wsl)
@@ -59,7 +60,8 @@ AI 助手能读项目文件 + 记忆,按步骤部署 + 排查问题。
 
 | 状态 | 芯片/类型 | 依据 |
 |---|---|---|
-| ✅ **推荐** | MediaTek MT7921 / MT7922 / RZ616 | 本项目实测(RZ616 / MT7922,VID 0e8d:0616),预编译内核 `MT7922 网卡内核` 已内置固件 |
+| ✅ **推荐** | MediaTek MT7921 | 预编译内核 `MT7921 网卡内核` 已内置固件 |
+| ✅ **推荐** | MediaTek MT7922 / RZ616 | 本项目实测(RZ616 / MT7922,VID 0e8d:0616),预编译内核 `MT7922 网卡内核` 已内置固件 |
 | ✅ **可用** | Intel AX201 | AX201 蓝牙走 USB 总线(usbipd 可直通),预编译内核 `Ax201 网卡内核` 已内置固件 |
 | ✅ **推荐** | Realtek USB 蓝牙 | build_kernel.sh 已 enable `BT_HCIBTUSB_REALTEK`,固件在 firmware/ |
 | ❌ **不兼容** | 非 USB 总线蓝牙(内置 PCIe/ACPI 蓝牙) | 不走 USB 总线,usbipd 直通不可用(架构硬性限制,与品牌无关) |
@@ -91,7 +93,8 @@ Switch 2 Pro(USB)──> procon2-driver ──evdev──> Web UI 后端 ─┘
 | `web_ui.py` | Web UI 后端(独立运行,aiohttp WebSocket server,端口 8080;与 Switch 连接解耦) |
 | `web/index.html` | Web UI 前端(虚拟/键盘/手柄/Pro2 模式 + 连接/断开 + 录制/回放/列表/循环) |
 | `build_kernel.sh` | WSL2 自定义内核编译脚本(蓝牙+USB+vhci+固件+uinput+hidraw built-in) |
-| `kernel/MT7922 网卡内核` | 预编译 WSL2 自定义内核(蓝牙+USB+vhci+uinput+hidraw built-in),内置 MediaTek MT7922/RZ616 蓝牙固件。MediaTek 适配器用:复制为 `kernel/bzImage3` 再放到 `C:\Users\<用户>\wslkernel\` |
+| `kernel/MT7921 网卡内核` | 预编译 WSL2 自定义内核(蓝牙+USB+vhci+uinput+hidraw built-in),内置 MediaTek MT7921 蓝牙固件。MT7921 适配器用:复制为 `kernel/bzImage3` 再放到 `C:\Users\<用户>\wslkernel\` |
+| `kernel/MT7922 网卡内核` | 预编译 WSL2 自定义内核(蓝牙+USB+vhci+uinput+hidraw built-in),内置 MediaTek MT7922/RZ616 蓝牙固件。MT7922/RZ616 适配器用:复制为 `kernel/bzImage3` 再放到 `C:\Users\<用户>\wslkernel\` |
 | `kernel/Ax201 网卡内核` | 预编译 WSL2 自定义内核(蓝牙+USB+vhci+uinput+hidraw built-in),内置 Intel AX201 蓝牙固件。AX201 适配器用:复制为 `kernel/bzImage3` 再放到 `C:\Users\<用户>\wslkernel\` |
 | `joycontrol/` | [joycontrol](https://github.com/mart1nro/joycontrol) 源码(已 patch Python 3.14 兼容,utils.py) |
 | `joycontrol-pluginloader/` | [joycontrol-pluginloader](https://github.com/Almtr/joycontrol-pluginloader) 源码(已 patch,loader.py) |
@@ -111,7 +114,7 @@ wsl --install -d Ubuntu
 ```
 
 ### 2. 配置 WSL 内核
-WSL2 默认内核无蓝牙驱动,需自编。项目已附带预编译内核:`kernel/MT7922 网卡内核`(MediaTek)、`kernel/Ax201 网卡内核`(Intel AX201)。**把匹配你蓝牙芯片的那个复制为 `kernel/bzImage3`**(再放到 `C:\Users\<用户>\wslkernel\`,见下),即可直接用,无需编译。其他蓝牙芯片才需按 `build_kernel.sh` 自编:
+WSL2 默认内核无蓝牙驱动,需自编。项目已附带预编译内核:`kernel/MT7921 网卡内核`、`kernel/MT7922 网卡内核`(MediaTek)、`kernel/Ax201 网卡内核`(Intel AX201)。**把匹配你蓝牙芯片的那个复制为 `kernel/bzImage3`**(再放到 `C:\Users\<用户>\wslkernel\`,见下),即可直接用,无需编译。其他蓝牙芯片才需按 `build_kernel.sh` 自编:
 - 开启 `CONFIG_BT`/`BT_HCIBTUSB`/`BT_HCIBTUSB_MTK`(蓝牙,MediaTek)
 - 开启 `CONFIG_USB`/`USB_SUPPORT`(USB)
 - 开启 `CONFIG_INPUT_UINPUT`/`CONFIG_HIDRAW`(Pro2 模式需要,uinput 默认为模块需 `modprobe uinput`)
@@ -253,6 +256,7 @@ Class = 0x002508
 ## 更新日志
 
 ### 2026-08-13
+- **新增 MT7921 预编译内核**:`kernel/MT7921 网卡内核`(MediaTek MT7921 蓝牙固件 built-in),与 MT7922/AX201 一样按芯片复制为 `kernel/bzImage3` 直接使用
 - **Xbox Series 手柄适配**:「检测手柄」按钮(仅手柄模式显示);全模式自动识别手柄(`getXboxGamepad` 优先 Xbox/XInput,不再死取第一个);「手柄映射」面板常驻检测显示;默认映射补 Xbox 键(16)→Home、Share 键(17)→截图
 - **录制/播放 60Hz 对齐**:摇杆录制与播放都按 16ms 节流,和 Switch 60Hz 采样对齐,快速摇杆动作不再因采样丢位置被吞
 - **宏回放连接卡死修复**:`controller_state.connect()` 加 15s 超时(Switch 握手中途断开时不再永久卡死 conn_manager,自动重试)
