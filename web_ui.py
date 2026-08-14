@@ -31,6 +31,7 @@ class web_ui:
         self._clients = set()
         self._transport = None
         self._auto_reconnect = True
+        self._last_state_bcast = 0
         self._load_config()
 
     def _load_config(self):
@@ -217,6 +218,8 @@ class web_ui:
                             await ws.send_json({'type': 'status', 'state': state, 'msg': msg})
                         except Exception:
                             pass
+                        # sync the virtual controller visuals on page load
+                        await self._broadcast_state(force=True)
                     else:
                         await self._apply(ev)
                 except Exception as e:
@@ -235,6 +238,49 @@ class web_ui:
         for ws in list(self._clients):
             try:
                 asyncio.create_task(_send(ws))
+            except Exception:
+                pass
+
+    def _get_state_view(self):
+        # Snapshot of what is actually being sent to the Switch: pressed
+        # buttons + normalized stick positions. Used for the web UI virtual
+        # controller to mirror live input and macro playback.
+        cs = self.controller_state
+        if cs is None:
+            return None
+        bs = cs.button_state
+        buttons = {}
+        for name in bs._available_buttons:
+            try:
+                buttons[name] = bool(getattr(bs, name + '_is_set')())
+            except Exception:
+                pass
+        sticks = {}
+        for side, ss in (('left', cs.l_stick_state), ('right', cs.r_stick_state)):
+            h = v = 0.0
+            if ss is not None and ss._calibration is not None:
+                cal = ss._calibration
+                hr = ss.get_h(); vr = ss.get_v()
+                h = (hr - cal.h_center) / (cal.h_max_above_center if hr >= cal.h_center else cal.h_max_below_center)
+                v = (vr - cal.v_center) / (cal.v_max_above_center if vr >= cal.v_center else cal.v_max_below_center)
+                h = max(-1.0, min(1.0, h)); v = max(-1.0, min(1.0, v))
+            sticks[side] = {'h': h, 'v': v}
+        return {'buttons': buttons, 'sticks': sticks}
+
+    async def _broadcast_state(self, force=False):
+        # Mirror live controller state to the web UI (button highlight + stick
+        # position) so macro playback is visible. Throttled for dense stick
+        # events; buttons pass force=True for instant highlight.
+        now = time.time()
+        if not force and now - self._last_state_bcast < 0.033:
+            return
+        self._last_state_bcast = now
+        view = self._get_state_view()
+        if view is None:
+            return
+        for ws in list(self._clients):
+            try:
+                await ws.send_json({'type': 'state', **view})
             except Exception:
                 pass
 
@@ -267,6 +313,7 @@ class web_ui:
             cs.l_stick_state.set_center()
             cs.r_stick_state.set_center()
             await cs.send()
+            await self._broadcast_state(force=True)
         except Exception as e:
             logger.warning(f'release_all error: {e}')
 
@@ -295,18 +342,26 @@ class web_ui:
                 if not self._active(gen):
                     break
                 if e['ev'].get('type') == 'stick':
-                    # NS samples at 60Hz (~16ms): drop stick events denser than
-                    # that on playback too, so the Switch sees the same cadence
-                    # it sampled while recording (fast flicks no longer drop).
-                    if e['t'] - last_stick_t[e['ev']['stick']] < 16:
+                    # Keep events up to ~100Hz (incl. old 66Hz-recorded macros,
+                    # whose 15ms gaps a 16ms threshold dropped every other one,
+                    # distorting the stick trajectory / leaving it off-center).
+                    # Only drop denser-than-100Hz stick events, which the Switch
+                    # can't track.
+                    if e['t'] - last_stick_t[e['ev']['stick']] < 10:
                         continue
                     last_stick_t[e['ev']['stick']] = e['t']
                 await self._apply(e['ev'])
+            if self._active(gen):
+                # each loop ends neutral before the interval / next loop
+                await self._release_all()
             if self._active(gen) and interval > 0 and (loops == 0 or loop_count < loops):
                 await self._interruptible_sleep(interval, gen)
         # Only clear _playing if we're still the current task - a superseded
         # task must not clobber the flag the newer task now owns.
         if gen is None or self._play_gen == gen:
+            # Macro finished - return the controller to neutral (release all
+            # buttons + center sticks) so it doesn't hold the last input.
+            await self._release_all()
             self._playing = False
         logger.info('play done')
 
@@ -622,9 +677,9 @@ class web_ui:
                 if not self._active(gen):
                     break
                 if e['ev'].get('type') == 'stick':
-                    # NS samples at 60Hz (~16ms): drop stick events denser than
-                    # that on playback too (see _play).
-                    if e['t'] - last_stick_t[e['ev']['stick']] < 16:
+                    # Keep events up to ~100Hz (incl. old 66Hz macros); only
+                    # drop denser-than-100Hz stick events (see _play).
+                    if e['t'] - last_stick_t[e['ev']['stick']] < 10:
                         continue
                     last_stick_t[e['ev']['stick']] = e['t']
                 await self._apply(e['ev'])
@@ -661,11 +716,17 @@ class web_ui:
                     await self._play_list_once(extraMacros, extraMacroInterval, gen)
                     extra_since = 0
                     extra_t0 = time.time()
+            if self._active(gen):
+                # each list round ends neutral before the loop interval / next round
+                await self._release_all()
             if self._active(gen) and loopInterval > 0 and (loops == 0 or loop_count < loops):
                 await self._interruptible_sleep(loopInterval, gen)
         # Only clear _playing if we're still the current task - a superseded
         # task must not clobber the flag the newer task now owns.
         if gen is None or self._play_gen == gen:
+            # List finished - return the controller to neutral (release all
+            # buttons + center sticks) so it doesn't hold the last input.
+            await self._release_all()
             self._playing = False
         logger.info('play list stopped/done')
 
@@ -675,6 +736,7 @@ class web_ui:
             return  # not connected yet - drop input
         t = ev.get('type')
         try:
+            centered = False
             if t == 'button':
                 cs.button_state.set_button(ev['name'], bool(ev['pressed']))
                 await cs.send()
@@ -682,7 +744,8 @@ class web_ui:
                 stick = ev['stick']
                 ss = cs.l_stick_state if stick == 'left' else cs.r_stick_state
                 h = float(ev['h']); v = float(ev['v'])
-                if abs(h) < 0.01 and abs(v) < 0.01:
+                centered = abs(h) < 0.01 and abs(v) < 0.01
+                if centered:
                     ss.set_center()
                 else:
                     cal = ss._calibration
@@ -690,6 +753,9 @@ class web_ui:
                     v_val = cal.v_center + v * (cal.v_max_above_center if v >= 0 else cal.v_max_below_center)
                     ss.set_h(int(max(0, min(4095, h_val))))
                     ss.set_v(int(max(0, min(4095, v_val))))
+            # force-broadcast buttons and stick->center so the web UI knob always
+            # returns to center (a throttled broadcast can drop the center event)
+            await self._broadcast_state(force=(t == 'button' or centered))
         except Exception as e:
             logger.warning(f'apply error: {e} ev={ev}')
 
