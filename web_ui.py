@@ -270,7 +270,10 @@ class web_ui:
     async def _broadcast_state(self, force=False):
         # Mirror live controller state to the web UI (button highlight + stick
         # position) so macro playback is visible. Throttled for dense stick
-        # events; buttons pass force=True for instant highlight.
+        # events; stick->center passes force=True. Sends are fire-and-forget so
+        # a slow client can NEVER slow down playback (blocking on send_json
+        # here caused macro events to burst into one 60Hz frame and get
+        # swallowed on long list playback).
         now = time.time()
         if not force and now - self._last_state_bcast < 0.033:
             return
@@ -278,9 +281,15 @@ class web_ui:
         view = self._get_state_view()
         if view is None:
             return
-        for ws in list(self._clients):
+
+        async def _send(ws):
             try:
                 await ws.send_json({'type': 'state', **view})
+            except Exception:
+                pass
+        for ws in list(self._clients):
+            try:
+                asyncio.create_task(_send(ws))
             except Exception:
                 pass
 
@@ -658,10 +667,12 @@ class web_ui:
         # Play one pass through a macro list (all macros, in order). Shared by
         # the main list loop and the extra (inserted) macro list. Checks
         # _active(gen) throughout so 'stop' or a superseding play interrupts.
+        # Each macro is recorded independently, so after EVERY macro we release
+        # all buttons + center sticks - a macro must not leave state into the
+        # next one (or into the macroInterval pause).
         for idx, macro in enumerate(macros):
             if not self._active(gen) or not macro:
                 break
-            await self._release_all()
             t0 = macro[0]['t'] / 1000.0
             start = time.time()
             last_stick_t = {'left': -1000, 'right': -1000}
@@ -683,6 +694,9 @@ class web_ui:
                         continue
                     last_stick_t[e['ev']['stick']] = e['t']
                 await self._apply(e['ev'])
+            if self._active(gen):
+                # macro finished - return to neutral before the next macro
+                await self._release_all()
             if self._active(gen) and macroInterval > 0 and idx < len(macros) - 1:
                 await self._interruptible_sleep(macroInterval, gen)
 
@@ -692,6 +706,7 @@ class web_ui:
         if not macros:
             return
         self._playing = True
+        await self._release_all()  # clean start for the first round
         loop_count = 0
         # Extra-list trigger state: count main iterations since the last extra
         # run, and track the time baseline. Either condition (count OR elapsed
